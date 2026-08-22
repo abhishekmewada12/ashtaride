@@ -16,7 +16,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _mobileController = TextEditingController();
   bool _loading = false;
-  final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
+  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
 
   Future<void> _register() async {
     if (_nameController.text.trim().isEmpty) {

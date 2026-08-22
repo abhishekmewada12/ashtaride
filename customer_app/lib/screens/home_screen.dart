@@ -28,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _checkingRide = true;
   Map<String, dynamic>? _activeRide;
   String _greeting = '';
-  final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
+  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
 
   @override
   void initState() {

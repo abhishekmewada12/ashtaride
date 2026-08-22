@@ -28,7 +28,7 @@ class RideRequestScreen extends StatefulWidget {
 }
 
 class _RideRequestScreenState extends State<RideRequestScreen> {
-  final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
+  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
   bool _loading = false;
 
   Future<String?> _getToken() async {

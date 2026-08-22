@@ -17,7 +17,7 @@ class _RatingScreenState extends State<RatingScreen> {
   String? _selectedTag;
   final _feedbackController = TextEditingController();
   bool _loading = false;
-  final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
+  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
 
   final List<Map<String, dynamic>> _tags = [
     {'label': '👍 Safe Driving', 'value': 'safe_driving'},

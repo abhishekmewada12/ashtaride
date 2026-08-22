@@ -27,7 +27,7 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
   late AnimationController _pulseController;
   Timer? _statusTimer;
   String _status = 'searching';
-  final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
+  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
 
   @override
   void initState() {

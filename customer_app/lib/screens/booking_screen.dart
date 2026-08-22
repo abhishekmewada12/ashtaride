@@ -33,7 +33,7 @@ class _BookingScreenState extends State<BookingScreen> {
   bool _showSuggestions = false;
   List<LatLng> _routePoints = [];
 
-  final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
+  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
   final _nominatimDio = Dio(BaseOptions(
     baseUrl: 'https://nominatim.openstreetmap.org',
     headers: {'User-Agent': 'AshtaRide/1.0'},

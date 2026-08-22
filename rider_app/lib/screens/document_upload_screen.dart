@@ -30,7 +30,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   String? _licenseBase64;
   bool _loading = false;
 
-  final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
+  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
   final _picker = ImagePicker();
 
   Future<void> _pickImage(bool isAadhaar) async {

@@ -18,7 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _otpController = TextEditingController();
   bool _otpSent = false;
   bool _loading = false;
-  final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
+  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
 
   Future<void> _sendOTP() async {
     if (_mobileController.text.length != 10) {

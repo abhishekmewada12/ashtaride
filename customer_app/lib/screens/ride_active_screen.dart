@@ -33,7 +33,7 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
   String _rideStatus = 'accepted';
   String? _rideOtp;
   Timer? _statusTimer;
-  final _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8000'));
+  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
 
   final Map<String, Map<String, dynamic>> _statusInfo = {
     'accepted': {
