@@ -1,6 +1,6 @@
 [build]
   base = "admin_dashboard"
-  publish = "admin_dashboard/build"
+  publish = "build"
   command = "CI=false npm run build"
 
 [build.environment]
