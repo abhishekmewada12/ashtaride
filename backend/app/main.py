@@ -29,6 +29,30 @@ app.include_router(riders.router,        prefix="/api/v1/riders",        tags=["
 app.include_router(admin.router,         prefix="/api/v1/admin",         tags=["Admin"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
 
+@app.on_event("startup")
+def startup_seed_admin():
+    from app.database import SessionLocal
+    from app.models import AdminUser
+    from app.auth import hash_password
+    db = SessionLocal()
+    try:
+        admin = db.query(AdminUser).filter(AdminUser.email == "admin@ashtaride.com").first()
+        if not admin:
+            admin = AdminUser(
+                full_name="AshtaRide Admin",
+                email="admin@ashtaride.com",
+                password_hash=hash_password("admin123"),
+                role="superadmin",
+                is_active=True
+            )
+            db.add(admin)
+            db.commit()
+            print("Default admin created: admin@ashtaride.com / admin123")
+    except Exception as e:
+        print(f"Error seeding admin: {e}")
+    finally:
+        db.close()
+
 @app.get("/")
 def root():
     return {
