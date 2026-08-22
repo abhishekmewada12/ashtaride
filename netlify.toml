@@ -1,7 +1,11 @@
 [build]
   base = "admin_dashboard"
-  publish = "build"
-  command = "npm run build"
+  publish = "admin_dashboard/build"
+  command = "CI=false npm run build"
+
+[build.environment]
+  CI = "false"
+  NODE_VERSION = "18"
 
 [[redirects]]
   from = "/*"
