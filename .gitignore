@@ -1,41 +1,9 @@
-﻿# Environment variables (NEVER commit secrets)
+﻿APKs/
 .env
-*.env
-.env.*
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-venv/
-.venv/
-env/
-*.sqlite3
-
-# Node / React
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-/admin_dashboard/build/
-.pnp
-.pnp.js
-
-# Flutter / Dart
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
-.pub/
 build/
-android/app/debug/
-android/app/profile/
-android/app/release/
-
-# OS / Editor files
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.iml
+.dart_tool/
+venv/
+__pycache__/
+*.pyc
+.system_generated/
