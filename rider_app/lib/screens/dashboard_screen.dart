@@ -368,8 +368,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             // Verification Status Banners
             if (_profile?['verification_status'] == 'rejected') ...[
-            // Verification Status Banners
-            if (_profile?['verification_status'] == 'rejected') ...[
               FadeInDown(
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

@@ -68,38 +68,65 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
+  // Popular Ashta Landmarks for instant offline auto-suggestion
+  final List<Map<String, dynamic>> _ashtaHotspots = [
+    {'display_name': 'Ashta Bus Stand, Old NH86, Ashta', 'lat': '23.0220', 'lon': '76.7230'},
+    {'display_name': 'Civil Hospital, SH70, Ashta', 'lat': '23.0226890', 'lon': '76.7245138'},
+    {'display_name': 'Krishi Upaj Mandi, Ashta', 'lat': '23.0280', 'lon': '76.7280'},
+    {'display_name': 'Bhopal Naka, Ashta', 'lat': '23.0250', 'lon': '76.7350'},
+    {'display_name': 'Kannod Road Chauraha, Ashta', 'lat': '23.0180', 'lon': '76.7200'},
+    {'display_name': 'Indore Bypass Road, Ashta', 'lat': '23.0150', 'lon': '76.7100'},
+    {'display_name': 'Subhash Chowk, Main Market, Ashta', 'lat': '23.0210', 'lon': '76.7220'},
+    {'display_name': 'Old Bus Stand, Ashta', 'lat': '23.0205', 'lon': '76.7215'},
+    {'display_name': 'Ali Garden, Ashta', 'lat': '23.0240', 'lon': '76.7290'},
+  ];
+
   Future<void> _searchLocations(String query) async {
+    final lowerQuery = query.toLowerCase();
+    
+    // 1. Check local Ashta hotspots first for instant response
+    final localMatches = _ashtaHotspots.where((h) =>
+      h['display_name']!.toLowerCase().contains(lowerQuery)
+    ).toList();
+
+    if (localMatches.isNotEmpty) {
+      setState(() {
+        _suggestions = List<Map<String, dynamic>>.from(localMatches);
+        _showSuggestions = true;
+      });
+    }
+
+    // 2. Fetch live OpenStreetMap suggestions
     try {
       final res = await _nominatimDio.get('/search', queryParameters: {
-        'q': query,
+        'q': query.contains('ashta') ? query : '$query, Ashta, Madhya Pradesh',
         'format': 'json',
-        'limit': 8,
+        'limit': 10,
         'countrycodes': 'in',
         'addressdetails': 1,
-        'viewbox': '${widget.currentLocation.longitude - 0.1},${widget.currentLocation.latitude + 0.1},${widget.currentLocation.longitude + 0.1},${widget.currentLocation.latitude - 0.1}',
-        'bounded': 1,
       });
 
       if (res.data is List && res.data.isNotEmpty) {
+        final List<Map<String, dynamic>> apiResults = List<Map<String, dynamic>>.from(res.data);
+        
+        // Merge without duplicates
+        final merged = [...localMatches];
+        for (var place in apiResults) {
+          if (!merged.any((m) => m['display_name'] == place['display_name'])) {
+            merged.add(place);
+          }
+        }
+
         setState(() {
-          _suggestions = List<Map<String, dynamic>>.from(res.data);
+          _suggestions = merged;
           _showSuggestions = true;
-        });
-      } else {
-        final res2 = await _nominatimDio.get('/search', queryParameters: {
-          'q': '$query, Ashta, Madhya Pradesh',
-          'format': 'json',
-          'limit': 8,
-          'countrycodes': 'in',
-          'addressdetails': 1,
-        });
-        setState(() {
-          _suggestions = List<Map<String, dynamic>>.from(res2.data);
-          _showSuggestions = _suggestions.isNotEmpty;
         });
       }
     } catch (e) {
-      setState(() => _showSuggestions = false);
+      // If network fails, local matches still show
+      if (localMatches.isEmpty) {
+        setState(() => _showSuggestions = false);
+      }
     }
   }
 
