@@ -34,10 +34,11 @@ class _BookingScreenState extends State<BookingScreen> {
   List<LatLng> _routePoints = [];
 
   final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
-  final _nominatimDio = Dio(BaseOptions(
-    baseUrl: 'https://nominatim.openstreetmap.org',
-    headers: {'User-Agent': 'AshtaRide/1.0'},
+  final _locationIqDio = Dio(BaseOptions(
+    baseUrl: 'https://api.locationiq.com/v1',
   ));
+  static const String _locationIqKey = 'pk.e95e9e1ce13772dedd2d081b7f1c4bf7';
+  
   final _osrmDio = Dio(BaseOptions(
     baseUrl: 'https://router.project-osrm.org',
   ));
@@ -58,7 +59,7 @@ class _BookingScreenState extends State<BookingScreen> {
 
   void _onSearchChanged() {
     final query = _destinationController.text.trim();
-    if (query.length >= 3) {
+    if (query.length >= 2) {
       _searchLocations(query);
     } else {
       setState(() {
@@ -84,7 +85,7 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _searchLocations(String query) async {
     final lowerQuery = query.toLowerCase();
     
-    // 1. Check local Ashta hotspots first for instant response
+    // 1. Instant match with local Ashta hotspots
     final localMatches = _ashtaHotspots.where((h) =>
       h['display_name']!.toLowerCase().contains(lowerQuery)
     ).toList();
@@ -96,18 +97,25 @@ class _BookingScreenState extends State<BookingScreen> {
       });
     }
 
-    // 2. Fetch live OpenStreetMap suggestions
+    // 2. Fetch live LocationIQ Autocomplete suggestions
     try {
-      final res = await _nominatimDio.get('/search', queryParameters: {
-        'q': query.contains('ashta') ? query : '$query, Ashta, Madhya Pradesh',
-        'format': 'json',
-        'limit': 10,
+      final searchQuery = query.toLowerCase().contains('ashta') ? query : '$query, Ashta';
+      final res = await _locationIqDio.get('/autocomplete', queryParameters: {
+        'key': _locationIqKey,
+        'q': searchQuery,
+        'limit': 8,
         'countrycodes': 'in',
-        'addressdetails': 1,
+        'normalizeaddress': 1,
       });
 
       if (res.data is List && res.data.isNotEmpty) {
-        final List<Map<String, dynamic>> apiResults = List<Map<String, dynamic>>.from(res.data);
+        final List<Map<String, dynamic>> apiResults = (res.data as List).map((item) {
+          return {
+            'display_name': item['display_name']?.toString() ?? '',
+            'lat': item['lat']?.toString() ?? '',
+            'lon': item['lon']?.toString() ?? '',
+          };
+        }).toList();
         
         // Merge without duplicates
         final merged = [...localMatches];
@@ -123,7 +131,7 @@ class _BookingScreenState extends State<BookingScreen> {
         });
       }
     } catch (e) {
-      // If network fails, local matches still show
+      // Fallback stays active
       if (localMatches.isEmpty) {
         setState(() => _showSuggestions = false);
       }
