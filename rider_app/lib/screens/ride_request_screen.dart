@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
+import 'package:flutter/services.dart';
 import 'active_ride_screen.dart';
 
 class RideRequestScreen extends StatefulWidget {
@@ -31,12 +33,39 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
   final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
   bool _loading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // Play loud incoming ride ringtone & vibration like Rapido / Uber
+    try {
+      FlutterRingtonePlayer().play(
+        android: AndroidSounds.ringtone,
+        ios: IosSounds.glass,
+        looping: true,
+        volume: 1.0,
+        asAlarm: true,
+      );
+      HapticFeedback.vibrate();
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    try {
+      FlutterRingtonePlayer().stop();
+    } catch (_) {}
+    super.dispose();
+  }
+
   Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('rider_token');
   }
 
   Future<void> _acceptRide() async {
+    try {
+      FlutterRingtonePlayer().stop();
+    } catch (_) {}
     setState(() => _loading = true);
     try {
       final token = await _getToken();
@@ -68,18 +97,21 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
   }
 
   Future<void> _rejectRide() async {
-  try {
-    final token = await _getToken();
-    await _dio.post(
-      '/api/v1/riders/rides/${widget.requestId}/reject',
-      options: Options(headers: {'Authorization': 'Bearer $token'}),
-    );
-  } catch (e) {
-    // Silent fail
+    try {
+      FlutterRingtonePlayer().stop();
+    } catch (_) {}
+    try {
+      final token = await _getToken();
+      await _dio.post(
+        '/api/v1/riders/rides/${widget.requestId}/reject',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } catch (e) {
+      // Silent fail
+    }
+    if (!mounted) return;
+    Navigator.pop(context);
   }
-  if (!mounted) return;
-  Navigator.pop(context);
-}
 
   @override
   Widget build(BuildContext context) {

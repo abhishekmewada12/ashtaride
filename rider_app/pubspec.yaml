@@ -21,6 +21,7 @@ dependencies:
   url_launcher: ^6.3.2
   cupertino_icons: ^1.0.8
   image_picker: ^1.2.1
+  flutter_ringtone_player: ^4.0.0+4
 
 dev_dependencies:
   flutter_test:
