@@ -5,6 +5,7 @@ import DashboardPage from './pages/DashboardPage';
 import RidersPage from './pages/RidersPage';
 import RidesPage from './pages/RidesPage';
 import UsersPage from './pages/UsersPage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import Layout from './components/Layout';
 
 // Protected Route
@@ -18,6 +19,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
         <Route
           path="/"
           element={
