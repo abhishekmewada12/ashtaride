@@ -204,12 +204,58 @@ def upload_documents(request: DocumentUploadRequest, db: Session = Depends(get_d
     if not rider:
         raise HTTPException(status_code=404, detail="Rider not found")
 
-    rider.aadhaar_number = request.aadhaar_number
-    rider.aadhaar_doc_url = request.aadhaar_doc_base64
-    rider.driving_license_number = request.driving_license_number
-    rider.driving_license_url = request.driving_license_base64
+    # Cloudinary setup for real document image storage
+    import cloudinary
+    import cloudinary.uploader
+    from app.config import settings
 
-    # Vehicle save ya update karo (Re-upload support)
+    if settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_API_SECRET:
+        cloudinary.config(
+            cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+            api_key=settings.CLOUDINARY_API_KEY,
+            api_secret=settings.CLOUDINARY_API_SECRET,
+            secure=True
+        )
+
+    # 1. Upload Aadhaar to Cloudinary
+    rider.aadhaar_number = request.aadhaar_number
+    if request.aadhaar_doc_base64:
+        if request.aadhaar_doc_base64.startswith("http"):
+            rider.aadhaar_doc_url = request.aadhaar_doc_base64
+        else:
+            try:
+                aadhaar_res = cloudinary.uploader.upload(
+                    request.aadhaar_doc_base64,
+                    folder="ashtaride/aadhaar",
+                    resource_type="auto"
+                )
+                rider.aadhaar_doc_url = aadhaar_res.get("secure_url", request.aadhaar_doc_base64)
+            except Exception as e:
+                print(f"Aadhaar Cloudinary upload error: {e}")
+                rider.aadhaar_doc_url = request.aadhaar_doc_base64
+
+    # 2. Upload Driving License to Cloudinary
+    rider.driving_license_number = request.driving_license_number
+    if request.driving_license_base64:
+        if request.driving_license_base64.startswith("http"):
+            rider.driving_license_url = request.driving_license_base64
+        else:
+            try:
+                dl_res = cloudinary.uploader.upload(
+                    request.driving_license_base64,
+                    folder="ashtaride/licenses",
+                    resource_type="auto"
+                )
+                rider.driving_license_url = dl_res.get("secure_url", request.driving_license_base64)
+            except Exception as e:
+                print(f"DL Cloudinary upload error: {e}")
+                rider.driving_license_url = request.driving_license_base64
+
+    # Reset verification status on new document submission
+    rider.verification_status = "pending"
+    rider.rejection_reason = None
+
+    # 3. Vehicle save ya update karo (Re-upload support)
     from app.models import Vehicle
     vehicle = db.query(Vehicle).filter(
         (Vehicle.rider_id == rider.id) | (Vehicle.plate_number == request.plate_number)
@@ -232,4 +278,4 @@ def upload_documents(request: DocumentUploadRequest, db: Session = Depends(get_d
     
     db.commit()
 
-    return {"message": "Documents uploaded successfully! Waiting for admin approval."}
+    return {"message": "Documents uploaded to Cloudinary successfully! Waiting for admin approval."}

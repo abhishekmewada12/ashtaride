@@ -21,9 +21,9 @@ class Settings(BaseSettings):
 
     FIREBASE_CREDENTIALS_PATH: Optional[str] = None
 
-    CLOUDINARY_CLOUD_NAME: Optional[str] = None
-    CLOUDINARY_API_KEY: Optional[str] = None
-    CLOUDINARY_API_SECRET: Optional[str] = None
+    CLOUDINARY_CLOUD_NAME: Optional[str] = "pqgznfma"
+    CLOUDINARY_API_KEY: Optional[str] = "399152332718593"
+    CLOUDINARY_API_SECRET: Optional[str] = "TXebMAB7qXrH4X4biFc6_IwRrgA"
 
     BASE_FARE: float = 20.0
     PER_KM_FARE: float = 8.0
