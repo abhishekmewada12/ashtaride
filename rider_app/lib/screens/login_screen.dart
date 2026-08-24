@@ -18,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _mobileController = TextEditingController();
   final _otpController = TextEditingController();
   bool _otpSent = false;
+  bool _loading = false;
   final _dio = Dio(BaseOptions(
     baseUrl: 'https://ashtaride.onrender.com',
     connectTimeout: const Duration(seconds: 40),
