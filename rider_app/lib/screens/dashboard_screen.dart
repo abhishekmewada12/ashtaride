@@ -436,33 +436,94 @@ onPressed: () {
                 ),
               ),
             ] else if (_profile?['verification_status'] == 'pending') ...[
-              FadeInDown(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.orange.shade300),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.hourglass_top, color: Colors.orange, size: 22),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Your documents are under review by Admin.',
-                          style: GoogleFonts.poppins(
-                            color: Colors.orange.shade900,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+              if (_profile?['aadhaar_doc_url'] == null || _profile?['aadhaar_doc_url'] == '') ...[
+                FadeInDown(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.amber.shade400, width: 1.5),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 24),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Registration Incomplete ⚠️',
+                              style: GoogleFonts.poppins(
+                                color: Colors.brown.shade900,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Aapka registration adhoora hai. Kripya apna Aadhaar Card aur Driving License upload karein taaki admin aapka account approve kar sake.',
+                          style: GoogleFonts.poppins(color: Colors.brown.shade800, fontSize: 13),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => DocumentUploadScreen(
+                                    mobileNumber: _profile?['mobile_number'] ?? '',
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.upload_file, size: 18),
+                            label: Text('Upload Documents Now', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFD000),
+                              foregroundColor: const Color(0xFF1A1A1A),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ] else ...[
+                FadeInDown(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.hourglass_top, color: Colors.orange, size: 22),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Your documents are under review by Admin. You will be able to go online once approved.',
+                            style: GoogleFonts.poppins(
+                              color: Colors.orange.shade900,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
             
             // Stats

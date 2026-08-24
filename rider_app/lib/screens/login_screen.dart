@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'register_screen.dart';
+import 'document_upload_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,8 +18,18 @@ class _LoginScreenState extends State<LoginScreen> {
   final _mobileController = TextEditingController();
   final _otpController = TextEditingController();
   bool _otpSent = false;
-  bool _loading = false;
-  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
+  final _dio = Dio(BaseOptions(
+    baseUrl: 'https://ashtaride.onrender.com',
+    connectTimeout: const Duration(seconds: 40),
+    receiveTimeout: const Duration(seconds: 40),
+  ));
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-warm Render cloud server in background
+    _dio.get('/health').catchError((_) => null);
+  }
 
   Future<void> _sendOTP() async {
     if (_mobileController.text.length != 10) {
@@ -54,7 +65,18 @@ class _LoginScreenState extends State<LoginScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('rider_token', res.data['access_token']);
       if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      if (res.data['is_new_user'] == true) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DocumentUploadScreen(
+              mobileNumber: _mobileController.text.trim(),
+            ),
+          ),
+        );
+      } else {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
     } catch (e) {
   if (e is DioException) {
     final detail = e.response?.data['detail'] ?? '';

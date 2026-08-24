@@ -69,7 +69,7 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
-  // Popular Ashta Landmarks for instant offline auto-suggestion
+  // Comprehensive Ashta Landmarks for instant 0ms offline auto-suggestion
   final List<Map<String, dynamic>> _ashtaHotspots = [
     {'display_name': 'Ashta Bus Stand, Old NH86, Ashta', 'lat': '23.0220', 'lon': '76.7230'},
     {'display_name': 'Civil Hospital, SH70, Ashta', 'lat': '23.0226890', 'lon': '76.7245138'},
@@ -80,12 +80,23 @@ class _BookingScreenState extends State<BookingScreen> {
     {'display_name': 'Subhash Chowk, Main Market, Ashta', 'lat': '23.0210', 'lon': '76.7220'},
     {'display_name': 'Old Bus Stand, Ashta', 'lat': '23.0205', 'lon': '76.7215'},
     {'display_name': 'Ali Garden, Ashta', 'lat': '23.0240', 'lon': '76.7290'},
+    {'display_name': 'Gayatri Mandir, Ashta', 'lat': '23.0235', 'lon': '76.7260'},
+    {'display_name': 'Government PG College, Ashta', 'lat': '23.0265', 'lon': '76.7310'},
+    {'display_name': 'Shujalpur Naka, Ashta', 'lat': '23.0300', 'lon': '76.7250'},
+    {'display_name': 'Gandhi Chowk, Ashta', 'lat': '23.0215', 'lon': '76.7225'},
+    {'display_name': 'Kila Road, Old Town, Ashta', 'lat': '23.0195', 'lon': '76.7180'},
+    {'display_name': 'Dr. Ambedkar Square, Ashta', 'lat': '23.0245', 'lon': '76.7330'},
+    {'display_name': 'Petrol Pump, Kannod Road, Ashta', 'lat': '23.0170', 'lon': '76.7190'},
+    {'display_name': 'Sehore Naka, Ashta', 'lat': '23.0270', 'lon': '76.7380'},
+    {'display_name': 'Indore Junction / Sarwate, Indore', 'lat': '22.7196', 'lon': '75.8577'},
+    {'display_name': 'Bhopal Junction Railway Station, Bhopal', 'lat': '23.2599', 'lon': '77.4126'},
+    {'display_name': 'Sehore Bus Stand, Sehore', 'lat': '23.2032', 'lon': '77.0844'},
   ];
 
   Future<void> _searchLocations(String query) async {
     final lowerQuery = query.toLowerCase();
     
-    // 1. Instant match with local Ashta hotspots
+    // 1. Instant match with local Ashta hotspots (0 ms)
     final localMatches = _ashtaHotspots.where((h) =>
       h['display_name']!.toLowerCase().contains(lowerQuery)
     ).toList();
@@ -97,12 +108,11 @@ class _BookingScreenState extends State<BookingScreen> {
       });
     }
 
-    // 2. Fetch live LocationIQ Autocomplete suggestions
+    // 2. Fetch live LocationIQ Autocomplete suggestions with India country code
     try {
-      final searchQuery = query.toLowerCase().contains('ashta') ? query : '$query, Ashta';
       final res = await _locationIqDio.get('/autocomplete', queryParameters: {
         'key': _locationIqKey,
-        'q': searchQuery,
+        'q': query,
         'limit': 8,
         'countrycodes': 'in',
         'normalizeaddress': 1,
@@ -110,8 +120,13 @@ class _BookingScreenState extends State<BookingScreen> {
 
       if (res.data is List && res.data.isNotEmpty) {
         final List<Map<String, dynamic>> apiResults = (res.data as List).map((item) {
+          final dispPlace = item['display_place']?.toString();
+          final dispAddress = item['display_address']?.toString();
+          final title = dispPlace != null && dispAddress != null 
+              ? '$dispPlace, $dispAddress' 
+              : item['display_name']?.toString() ?? '';
           return {
-            'display_name': item['display_name']?.toString() ?? '',
+            'display_name': title,
             'lat': item['lat']?.toString() ?? '',
             'lon': item['lon']?.toString() ?? '',
           };
@@ -131,7 +146,6 @@ class _BookingScreenState extends State<BookingScreen> {
         });
       }
     } catch (e) {
-      // Fallback stays active
       if (localMatches.isEmpty) {
         setState(() => _showSuggestions = false);
       }
@@ -151,6 +165,32 @@ class _BookingScreenState extends State<BookingScreen> {
     });
 
     _mapController.move(LatLng(lat, lng), 14);
+    await _getFareEstimate();
+    await _getRoute();
+  }
+
+  Future<void> _selectPointOnMap(LatLng point) async {
+    setState(() {
+      _destinationLocation = point;
+      _destinationController.text = 'Selected Location (${point.latitude.toStringAsFixed(3)}, ${point.longitude.toStringAsFixed(3)})';
+      _showSuggestions = false;
+      _fareLoading = true;
+    });
+
+    // Try reverse geocode for human friendly name
+    try {
+      final res = await _locationIqDio.get('/reverse', queryParameters: {
+        'key': _locationIqKey,
+        'lat': point.latitude,
+        'lon': point.longitude,
+        'format': 'json',
+      });
+      if (res.data != null && res.data['display_name'] != null) {
+        final shortName = res.data['display_name'].toString().split(',').take(2).join(',');
+        setState(() => _destinationController.text = shortName);
+      }
+    } catch (_) {}
+
     await _getFareEstimate();
     await _getRoute();
   }
@@ -262,12 +302,13 @@ class _BookingScreenState extends State<BookingScreen> {
         children: [
           // Map
           SizedBox(
-            height: 220,
+            height: 230,
             child: FlutterMap(
               mapController: _mapController,
               options: MapOptions(
                 initialCenter: widget.currentLocation,
                 initialZoom: 14,
+                onTap: (tapPosition, point) => _selectPointOnMap(point),
               ),
               children: [
                 TileLayer(
@@ -281,8 +322,8 @@ class _BookingScreenState extends State<BookingScreen> {
                     polylines: [
                       Polyline(
                         points: _routePoints,
-                        strokeWidth: 4,
-                        color: const Color(0xFFFFD000),
+                        strokeWidth: 5,
+                        color: const Color(0xFF2563EB),
                       ),
                     ],
                   ),

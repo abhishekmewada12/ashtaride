@@ -16,8 +16,18 @@ class _LoginScreenState extends State<LoginScreen> {
   final _mobileController = TextEditingController();
   final _otpController = TextEditingController();
   bool _otpSent = false;
-  bool _loading = false;
-  final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
+  final _dio = Dio(BaseOptions(
+    baseUrl: 'https://ashtaride.onrender.com',
+    connectTimeout: const Duration(seconds: 40),
+    receiveTimeout: const Duration(seconds: 40),
+  ));
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-warm Render cloud server in background
+    _dio.get('/health').catchError((_) => null);
+  }
 
   Future<void> _sendOTP() async {
     if (_mobileController.text.length != 10) {

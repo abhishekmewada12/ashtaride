@@ -114,8 +114,14 @@ def verify_otp(request: VerifyOTPRequest, db: Session = Depends(get_db)):
         if not rider:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rider not registered. Please register first.")
 
+        has_docs = bool(rider.aadhaar_doc_url and rider.driving_license_url)
         token = create_access_token({"sub": str(rider.id), "type": "rider", "mobile": mobile})
-        return TokenResponse(access_token=token, user_type="rider", profile_complete=rider.verification_status == "approved")
+        return TokenResponse(
+            access_token=token,
+            user_type="rider",
+            is_new_user=not has_docs,
+            profile_complete=has_docs and rider.verification_status == "approved"
+        )
 
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_type")
