@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     OTP_DEV_CODE: str = "1234"
 
     MSG91_API_KEY: Optional[str] = "564018ATWESLLl6a8c6886P1"
-    MSG91_SENDER_ID: str = "ASHTAR"
-    MSG91_TEMPLATE_ID: Optional[str] = None
+    MSG91_SENDER_ID: str = "SMSIND"
+    MSG91_TEMPLATE_ID: Optional[str] = "6a8c7206249839385f040aa4"
 
     FIREBASE_CREDENTIALS_PATH: Optional[str] = None
 

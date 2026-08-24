@@ -49,8 +49,12 @@ def send_otp_sms(mobile_number: str, otp: str):
                 "mobile": formatted_mobile,
                 "otp": otp,
                 "otp_length": len(otp),
-                "otp_expiry": settings.OTP_EXPIRE_MINUTES
+                "otp_expiry": settings.OTP_EXPIRE_MINUTES,
             }
+            if settings.MSG91_TEMPLATE_ID:
+                params["template_id"] = settings.MSG91_TEMPLATE_ID
+            if settings.MSG91_SENDER_ID:
+                params["sender"] = settings.MSG91_SENDER_ID
             res = requests.post("https://control.msg91.com/api/v5/otp", params=params, timeout=10)
             print(f"[MSG91] Real SMS dispatched to {formatted_mobile}: {res.status_code} {res.text}")
             return True
