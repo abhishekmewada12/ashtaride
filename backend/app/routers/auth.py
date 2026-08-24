@@ -38,14 +38,25 @@ class TokenResponse(BaseModel):
     profile_complete: bool = True
 
 def generate_otp() -> str:
-    if settings.OTP_DEV_MODE:
-        return settings.OTP_DEV_CODE
-    return ''.join(random.choices(string.digits, k=6))
+    return ''.join(random.choices(string.digits, k=4))
 
 def send_otp_sms(mobile_number: str, otp: str):
-    if settings.OTP_DEV_MODE:
-        print(f"[DEV MODE] OTP for {mobile_number}: {otp}")
-        return True
+    if settings.MSG91_API_KEY:
+        try:
+            formatted_mobile = f"91{mobile_number}" if len(mobile_number) == 10 else mobile_number
+            params = {
+                "authkey": settings.MSG91_API_KEY,
+                "mobile": formatted_mobile,
+                "otp": otp,
+                "otp_length": len(otp),
+                "otp_expiry": settings.OTP_EXPIRE_MINUTES
+            }
+            res = requests.post("https://control.msg91.com/api/v5/otp", params=params, timeout=10)
+            print(f"[MSG91] Real SMS dispatched to {formatted_mobile}: {res.status_code} {res.text}")
+            return True
+        except Exception as e:
+            print(f"[MSG91] Error sending SMS: {e}")
+            return False
     return True
 
 @router.post("/send-otp", response_model=OTPResponse)

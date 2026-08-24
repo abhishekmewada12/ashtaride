@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     OTP_DEV_MODE: bool = True
     OTP_DEV_CODE: str = "1234"
 
-    MSG91_API_KEY: Optional[str] = None
+    MSG91_API_KEY: Optional[str] = "564018ATWESLLl6a8c6886P1"
     MSG91_SENDER_ID: str = "ASHTAR"
     MSG91_TEMPLATE_ID: Optional[str] = None
 
