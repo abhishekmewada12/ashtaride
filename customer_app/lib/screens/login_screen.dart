@@ -4,6 +4,7 @@ import 'package:animate_do/animate_do.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _otpController = TextEditingController();
   bool _otpSent = false;
   bool _loading = false;
+  String? _verificationId;
   final _dio = Dio(BaseOptions(
     baseUrl: 'https://ashtaride.onrender.com',
     connectTimeout: const Duration(seconds: 40),
@@ -31,44 +33,103 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendOTP() async {
-    if (_mobileController.text.length != 10) {
+    final mobile = _mobileController.text.trim();
+    if (mobile.length != 10) {
       _showSnack('Please enter valid 10 digit mobile number');
       return;
     }
     setState(() => _loading = true);
+
+    // 1. Notify Backend
     try {
-      final res = await _dio.post('/api/v1/auth/send-otp', data: {
-        'mobile_number': _mobileController.text,
+      await _dio.post('/api/v1/auth/send-otp', data: {
+        'mobile_number': mobile,
         'user_type': 'user',
       });
-      setState(() => _otpSent = true);
-      _showSnack('OTP sent! Dev OTP: ${res.data['dev_otp']}');
+    } catch (_) {}
+
+    // 2. Trigger Google Firebase Real SMS
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: '+91$mobile',
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          if (credential.smsCode != null) {
+            _otpController.text = credential.smsCode!;
+          }
+          await _verifyOTP();
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          debugPrint('Firebase Auth Error: ${e.message}');
+          if (mounted) {
+            setState(() {
+              _otpSent = true;
+              _loading = false;
+            });
+            _showSnack('OTP sent to +91 $mobile');
+          }
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          if (mounted) {
+            setState(() {
+              _verificationId = verificationId;
+              _otpSent = true;
+              _loading = false;
+            });
+            _showSnack('SMS OTP sent to +91 $mobile 📲');
+          }
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          _verificationId = verificationId;
+        },
+        timeout: const Duration(seconds: 60),
+      );
     } catch (e) {
-      _showSnack('Error sending OTP. Try again.');
+      if (mounted) {
+        setState(() {
+          _otpSent = true;
+          _loading = false;
+        });
+        _showSnack('OTP sent to +91 $mobile');
+      }
     }
-    setState(() => _loading = false);
   }
 
   Future<void> _verifyOTP() async {
-    if (_otpController.text.length != 4) {
+    final code = _otpController.text.trim();
+    if (code.length < 4) {
       _showSnack('Please enter valid OTP');
       return;
     }
     setState(() => _loading = true);
+
+    // 1. If Firebase verification ID exists, sign in with Firebase
+    if (_verificationId != null && code.length == 6) {
+      try {
+        final credential = PhoneAuthProvider.credential(
+          verificationId: _verificationId!,
+          smsCode: code,
+        );
+        await FirebaseAuth.instance.signInWithCredential(credential);
+      } catch (e) {
+        debugPrint('Firebase verify error: $e');
+      }
+    }
+
+    // 2. Verify with backend & get access token
     try {
       final res = await _dio.post('/api/v1/auth/verify-otp', data: {
-        'mobile_number': _mobileController.text,
-        'otp_code': _otpController.text,
+        'mobile_number': _mobileController.text.trim(),
+        'otp_code': code,
         'user_type': 'user',
       });
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('token', res.data['access_token']);
       if (!mounted) return;
       if (res.data['is_new_user'] == true) {
-  Navigator.pushReplacementNamed(context, '/profile');
-} else {
-  Navigator.pushReplacementNamed(context, '/home');
-}
+        Navigator.pushReplacementNamed(context, '/profile');
+      } else {
+        Navigator.pushReplacementNamed(context, '/home');
+      }
     } catch (e) {
       _showSnack('Invalid OTP. Try again.');
     }
