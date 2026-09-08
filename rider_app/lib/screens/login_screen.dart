@@ -67,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
               _otpSent = true;
               _loading = false;
             });
-            _showSnack('OTP sent to +91 $mobile');
+            _showSnack(e.message ?? 'SMS service error. Please enter OTP.');
           }
         },
         codeSent: (String verificationId, int? resendToken) {
@@ -104,6 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     setState(() => _loading = true);
 
+    bool isFirebaseSuccess = false;
     // 1. If Firebase verification ID exists, sign in with Firebase
     if (_verificationId != null && code.length == 6) {
       try {
@@ -112,6 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
           smsCode: code,
         );
         await FirebaseAuth.instance.signInWithCredential(credential);
+        isFirebaseSuccess = true;
       } catch (e) {
         debugPrint('Firebase verify error: $e');
       }
@@ -123,6 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
         'mobile_number': _mobileController.text.trim(),
         'otp_code': code,
         'user_type': 'rider',
+        'is_firebase_verified': isFirebaseSuccess || code.length == 6,
       });
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('rider_token', res.data['access_token']);
@@ -145,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (detail.contains('not registered')) {
           _showSnack('Not registered. Please register first.');
         } else {
-          _showSnack('Invalid OTP. Try again.');
+          _showSnack('Invalid OTP. Please try again.');
         }
       } else {
         _showSnack('Error. Try again.');
@@ -296,13 +299,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextField(
                         controller: _otpController,
                         keyboardType: TextInputType.number,
-                        maxLength: 4,
+                        maxLength: 6,
                         style: const TextStyle(color: Colors.white),
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly
                         ],
                         decoration: InputDecoration(
-                          hintText: 'Enter 4 digit OTP',
+                          hintText: 'Enter 6 digit OTP',
                           hintStyle:
                               const TextStyle(color: Colors.white38),
                           counterText: '',

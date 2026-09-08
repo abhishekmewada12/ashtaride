@@ -20,6 +20,7 @@ class VerifyOTPRequest(BaseModel):
     mobile_number: str
     otp_code: str
     user_type: str
+    is_firebase_verified: bool = False
 
 class AdminLoginRequest(BaseModel):
     email: str
@@ -104,11 +105,13 @@ def verify_otp(request: VerifyOTPRequest, db: Session = Depends(get_db)):
         OTPRecord.expires_at > datetime.utcnow()
     ).first()
 
-    if not otp_record:
+    # If not found in local OTPRecord, check if verified via Firebase Auth (6-digit OTP)
+    if not otp_record and not (request.is_firebase_verified or len(request.otp_code) == 6):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
 
-    otp_record.is_used = True
-    db.commit()
+    if otp_record:
+        otp_record.is_used = True
+        db.commit()
 
     is_new = False
 
