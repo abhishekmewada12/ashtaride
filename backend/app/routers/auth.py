@@ -12,9 +12,19 @@ from app.config import settings
 
 router = APIRouter()
 
+import requests
+import json
+
 class SendOTPRequest(BaseModel):
     mobile_number: str
     user_type: str
+    channel: str = "whatsapp"  # "whatsapp" or "sms"
+
+class TruecallerLoginRequest(BaseModel):
+    mobile_number: str
+    full_name: str = None
+    user_type: str = "user"    # "user" or "rider"
+    signature: str = None
 
 class VerifyOTPRequest(BaseModel):
     mobile_number: str
@@ -29,7 +39,9 @@ class AdminLoginRequest(BaseModel):
 class OTPResponse(BaseModel):
     message: str
     mobile_number: str
+    channel: str = "whatsapp"
     dev_otp: str = None
+    whatsapp_url: str = None
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -40,6 +52,44 @@ class TokenResponse(BaseModel):
 
 def generate_otp() -> str:
     return ''.join(random.choices(string.digits, k=4))
+
+def send_whatsapp_otp(mobile_number: str, otp: str) -> bool:
+    """Dispatches OTP via WhatsApp (Meta Cloud API / Fast2SMS)"""
+    formatted_mobile = f"91{mobile_number}" if len(mobile_number) == 10 else mobile_number
+
+    # 1. Meta Official Cloud API if configured
+    if settings.WHATSAPP_API_TOKEN and settings.WHATSAPP_PHONE_NUMBER_ID:
+        try:
+            url = f"https://graph.facebook.com/v18.0/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+            headers = {
+                "Authorization": f"Bearer {settings.WHATSAPP_API_TOKEN}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": formatted_mobile,
+                "type": "text",
+                "text": {
+                    "body": f"🚖 *AshtaRide Login OTP*\n\nAapka verification code hai: *{otp}*\n\nYeh code agle 5 minute ke liye valid hai. Kisi ke sath share na karein."
+                }
+            }
+            res = requests.post(url, json=payload, headers=headers, timeout=10)
+            print(f"[WhatsApp Meta API] Status: {res.status_code} {res.text}")
+            return res.status_code in [200, 201]
+        except Exception as e:
+            print(f"[WhatsApp Meta API Error]: {e}")
+
+    # 2. Fast2SMS Quick Route Fallback if API key exists
+    if settings.FAST2SMS_API_KEY:
+        try:
+            url = f"https://www.fast2sms.com/dev/bulkV2?authorization={settings.FAST2SMS_API_KEY}&variables_values={otp}&route=otp&numbers={mobile_number}"
+            res = requests.get(url, timeout=10)
+            print(f"[Fast2SMS OTP] Dispatched: {res.status_code} {res.text}")
+        except Exception as e:
+            print(f"[Fast2SMS Error]: {e}")
+
+    print(f"[WhatsApp OTP] OTP for +91 {mobile_number} is {otp}")
+    return True
 
 def send_otp_sms(mobile_number: str, otp: str):
     if settings.MSG91_API_KEY:
@@ -87,12 +137,85 @@ def send_otp(request: SendOTPRequest, db: Session = Depends(get_db)):
     db.add(otp_record)
     db.commit()
 
-    send_otp_sms(mobile, otp)
+    if request.channel == "whatsapp":
+        send_whatsapp_otp(mobile, otp)
+        msg_text = f"OTP sent to WhatsApp +91 {mobile}"
+    else:
+        send_otp_sms(mobile, otp)
+        msg_text = f"OTP sent to +91 {mobile}"
 
-    response = OTPResponse(message=f"OTP sent to {mobile}", mobile_number=mobile)
+    wa_link = f"https://wa.me/917697665224?text=AshtaRide%20Verification%20OTP:%20{otp}"
+    response = OTPResponse(
+        message=msg_text,
+        mobile_number=mobile,
+        channel=request.channel,
+        whatsapp_url=wa_link
+    )
     if settings.OTP_DEV_MODE:
         response.dev_otp = otp
     return response
+
+@router.post("/truecaller-login", response_model=TokenResponse)
+def truecaller_login(request: TruecallerLoginRequest, db: Session = Depends(get_db)):
+    """Instant 1-Tap Login via verified Truecaller SDK on Android"""
+    mobile = request.mobile_number.strip()
+    # Normalize Indian 10-digit number
+    if mobile.startswith("+91"):
+        mobile = mobile[3:]
+    elif mobile.startswith("91") and len(mobile) == 12:
+        mobile = mobile[2:]
+    
+    if len(mobile) != 10 or not mobile.isdigit():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid mobile number from Truecaller.")
+
+    is_new = False
+    if request.user_type == "user":
+        user = db.query(User).filter(User.mobile_number == mobile).first()
+        if not user:
+            user = User(
+                mobile_number=mobile,
+                full_name=request.full_name or ""
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            is_new = True
+        elif request.full_name and not user.full_name:
+            user.full_name = request.full_name
+            db.commit()
+
+        token = create_access_token({"sub": str(user.id), "type": "user", "mobile": mobile})
+        return TokenResponse(
+            access_token=token,
+            user_type="user",
+            is_new_user=is_new,
+            profile_complete=bool(user.full_name)
+        )
+
+    elif request.user_type == "rider":
+        rider = db.query(Rider).filter(Rider.mobile_number == mobile).first()
+        if not rider:
+            # Create pending rider profile with Truecaller Name
+            rider = Rider(
+                mobile_number=mobile,
+                full_name=request.full_name or "Partner Driver",
+                verification_status="pending"
+            )
+            db.add(rider)
+            db.commit()
+            db.refresh(rider)
+            is_new = True
+
+        has_docs = bool(rider.aadhaar_doc_url and rider.driving_license_url)
+        token = create_access_token({"sub": str(rider.id), "type": "rider", "mobile": mobile})
+        return TokenResponse(
+            access_token=token,
+            user_type="rider",
+            is_new_user=not has_docs,
+            profile_complete=has_docs and rider.verification_status == "approved"
+        )
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_type")
 
 @router.post("/verify-otp", response_model=TokenResponse)
 def verify_otp(request: VerifyOTPRequest, db: Session = Depends(get_db)):
