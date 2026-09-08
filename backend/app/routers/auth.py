@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.models import User, Rider, OTPRecord, AdminUser
-from app.auth import create_access_token, verify_password, hash_password
+from app.auth import create_access_token, verify_password, hash_password, get_current_user
 from app.config import settings
 
 router = APIRouter()
@@ -426,3 +426,30 @@ def upload_documents(request: DocumentUploadRequest, db: Session = Depends(get_d
     db.commit()
 
     return {"message": "Documents uploaded to Cloudinary successfully! Waiting for admin approval."}
+
+class UpdateProfileRequest(BaseModel):
+    full_name: str
+
+@router.get("/me")
+def get_my_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return {
+        "id": str(current_user.id),
+        "mobile_number": current_user.mobile_number,
+        "full_name": current_user.full_name or "Ashta User",
+        "rating": current_user.rating,
+        "total_rides": current_user.total_rides,
+        "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+    }
+
+@router.put("/profile")
+def update_profile(
+    request: UpdateProfileRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    current_user.full_name = request.full_name.strip()
+    db.commit()
+    return {"message": "Profile updated successfully", "full_name": current_user.full_name}

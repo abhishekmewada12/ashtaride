@@ -28,14 +28,43 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _checkingRide = true;
   Map<String, dynamic>? _activeRide;
   String _greeting = '';
+  String _userName = 'Customer';
+  String _userMobile = '';
   final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
 
   @override
   void initState() {
     super.initState();
     _setGreeting();
+    _loadUserProfile();
     _getCurrentLocation();
     _checkActiveRide();
+  }
+
+  Future<void> _loadUserProfile() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+      final res = await _dio.get(
+        '/api/v1/auth/me',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      if (res.statusCode == 200 && mounted) {
+        setState(() {
+          _userName = res.data['full_name'] ?? 'Customer';
+          _userMobile = res.data['mobile_number'] ?? '';
+        });
+        await prefs.setString('user_name', _userName);
+        await prefs.setString('user_mobile', _userMobile);
+      }
+    } catch (_) {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _userName = prefs.getString('user_name') ?? 'Customer';
+        _userMobile = prefs.getString('user_mobile') ?? '';
+      });
+    }
   }
 
   void _setGreeting() {
@@ -127,6 +156,183 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _editNameDialog() async {
+    final controller = TextEditingController(text: _userName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Edit Full Name', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: 'Enter your name',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFD000), foregroundColor: const Color(0xFF1A1A1A)),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (newName != null && newName.isNotEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('token');
+        await _dio.put(
+          '/api/v1/auth/profile',
+          data: {'full_name': newName},
+          options: Options(headers: {'Authorization': 'Bearer $token'}),
+        );
+        await prefs.setString('user_name', newName);
+        setState(() => _userName = newName);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name updated successfully!')));
+      } catch (_) {
+        setState(() => _userName = newName);
+      }
+    }
+  }
+
+  void _openProfileModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Handle bar
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // User Avatar & Name
+                  Row(
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFD000),
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(color: const Color(0xFFFFD000).withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 4)),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            _userName.isNotEmpty ? _userName[0].toUpperCase() : 'U',
+                            style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.bold, color: const Color(0xFF1A1A1A)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    _userName,
+                                    style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF1A1A1A)),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                GestureDetector(
+                                  onTap: () async {
+                                    Navigator.pop(ctx);
+                                    await _editNameDialog();
+                                  },
+                                  child: const Icon(Icons.edit, size: 16, color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _userMobile.isNotEmpty ? '+91 $_userMobile' : 'Verified Passenger',
+                              style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(6)),
+                              child: Text(
+                                '✓ Verified Account',
+                                style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green[700]),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+                  const Divider(),
+                  const SizedBox(height: 12),
+
+                  // Menu list
+                  ListTile(
+                    leading: const Icon(Icons.history, color: Color(0xFF1A1A1A)),
+                    title: Text('Your Rides', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14)),
+                    trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _checkActiveRide();
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.emergency, color: Colors.red),
+                    title: Text('Emergency Helpline', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.red)),
+                    trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ashta Helpline: 112 / +91 7697665224')));
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: Color(0xFF1A1A1A)),
+                    title: Text('Logout', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14)),
+                    trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _logout();
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
@@ -161,7 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 20,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.3),
+                        color: Colors.blue.withValues(alpha: 0.3),
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.blue, width: 2),
                       ),
@@ -179,7 +385,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           border: Border.all(color: Colors.white, width: 3),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
+                              color: Colors.black.withValues(alpha: 0.3),
                               blurRadius: 8,
                             ),
                           ],
@@ -236,7 +442,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: 0.1),
                         blurRadius: 10,
                       ),
                     ],
@@ -269,10 +475,35 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-                      IconButton(
-                        onPressed: _logout,
-                        icon: const Icon(Icons.logout,
-                            color: Color(0xFF1A1A1A)),
+                      // Profile Avatar Button
+                      GestureDetector(
+                        onTap: _openProfileModal,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFD000).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFFFFD000), width: 1.5),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(
+                                radius: 12,
+                                backgroundColor: const Color(0xFFFFD000),
+                                child: Text(
+                                  _userName.isNotEmpty ? _userName[0].toUpperCase() : 'U',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF1A1A1A)),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _userName.split(' ').first,
+                                style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12, color: const Color(0xFF1A1A1A)),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
                   ),
