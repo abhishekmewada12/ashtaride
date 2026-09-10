@@ -92,6 +92,18 @@ def send_whatsapp_otp(mobile_number: str, otp: str) -> bool:
     return True
 
 def send_otp_sms(mobile_number: str, otp: str):
+    # 1. Renflair SMS Gateway (Zero DLT / Direct Delivery)
+    if settings.RENFLAIR_API_KEY:
+        try:
+            url = f"https://sms.renflair.in/V1.php?API={settings.RENFLAIR_API_KEY}&PHONE={mobile_number}&OTP={otp}"
+            res = requests.get(url, timeout=10)
+            print(f"[Renflair SMS] Status: {res.status_code} Response: {res.text}")
+            if res.status_code == 200 and "SUCCESS" in res.text:
+                return True
+        except Exception as e:
+            print(f"[Renflair SMS Error]: {e}")
+
+    # 2. MSG91 Gateway Fallback
     if settings.MSG91_API_KEY:
         try:
             formatted_mobile = f"91{mobile_number}" if len(mobile_number) == 10 else mobile_number

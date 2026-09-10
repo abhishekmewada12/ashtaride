@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     MSG91_TEMPLATE_ID: Optional[str] = "6a8c7206249839385f040aa4"
 
     FAST2SMS_API_KEY: Optional[str] = "isNOugq8mwReloHS2V6BKUDa5TIf91MtnkyPWcjZ4drEpL7CbXGoSlFBrtX1Th35NxCQ0H7IKmjkyWcV"
+    RENFLAIR_API_KEY: Optional[str] = "264eba243e927d9e3c3927147af974c2"
     WHATSAPP_API_TOKEN: Optional[str] = None
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
     TRUECALLER_CLIENT_ID: Optional[str] = "cblmntzxxijyg6hk5mjdupximnpj54md9vbvxjsww4"
