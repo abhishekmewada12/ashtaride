@@ -65,24 +65,45 @@ def get_available_rides(current_rider: Rider = Depends(get_current_rider), db: S
     if current_rider.verification_status != "approved":
         return {"rides": [], "message": "Account not verified yet."}
 
+    # Return ride requests currently offered to this rider within 30s window OR unassigned
+    now = datetime.utcnow()
     requests = db.query(RideRequest).filter(
-        RideRequest.status == "searching",
-        RideRequest.expires_at > datetime.utcnow()
-    ).order_by(RideRequest.created_at.desc()).limit(10).all()
+        and_(
+            or_(
+                RideRequest.current_offered_rider_id == current_rider.id,
+                and_(
+                    RideRequest.status.in_(["SEARCHING", "OFFERED", "searching"]),
+                    RideRequest.current_offered_rider_id == None
+                )
+            ),
+            RideRequest.status.in_(["OFFERED", "SEARCHING", "searching"]),
+            RideRequest.expires_at > now
+        )
+    ).order_by(RideRequest.created_at.desc()).limit(5).all()
 
-    return {
-        "rides": [
-            {
-                "request_id": str(r.id),
-                "pickup_address": r.pickup_address,
-                "destination_address": r.destination_address,
-                "estimated_fare": float(r.estimated_fare or 0),
-                "estimated_distance": float(r.estimated_distance or 0),
-                "expires_in_seconds": max(0, int((r.expires_at - datetime.utcnow()).total_seconds()))
-            }
-            for r in requests
-        ]
-    }
+    valid_offers = []
+    for r in requests:
+        remaining_sec = 30
+        if r.offer_expires_at:
+            remaining_sec = max(0, int((r.offer_expires_at - now).total_seconds()))
+            if remaining_sec == 0:
+                continue  # expired
+        valid_offers.append({
+            "request_id": str(r.id),
+            "pickup_address": r.pickup_address,
+            "pickup_lat": float(r.pickup_lat),
+            "pickup_lng": float(r.pickup_lng),
+            "destination_address": r.destination_address,
+            "destination_lat": float(r.destination_lat),
+            "destination_lng": float(r.destination_lng),
+            "vehicle_type": r.vehicle_type or "bike",
+            "payment_method": r.payment_method or "cash",
+            "estimated_fare": float(r.estimated_fare or 0),
+            "estimated_distance": float(r.estimated_distance or 0),
+            "expires_in_seconds": remaining_sec
+        })
+
+    return {"rides": valid_offers}
 
 @router.post("/rides/{request_id}/reject")
 def reject_ride(
@@ -90,55 +111,66 @@ def reject_ride(
     current_rider: Rider = Depends(get_current_rider),
     db: Session = Depends(get_db)
 ):
+    from app.routers.rides import offer_ride_to_next_candidate
     ride_request = db.query(RideRequest).filter(
         RideRequest.id == request_id,
-        RideRequest.status == "searching",
+        RideRequest.status.in_(["OFFERED", "SEARCHING", "searching"]),
         RideRequest.expires_at > datetime.utcnow()
     ).first()
 
     if not ride_request:
-        raise HTTPException(status_code=404, detail="Ride request not found")
+        raise HTTPException(status_code=404, detail="Ride request not found or already closed")
 
-    notified = list(ride_request.notified_riders or [])
-    notified.append(current_rider.id)
-    ride_request.notified_riders = notified
+    rejected = list(ride_request.rejected_rider_ids or [])
+    if current_rider.id not in rejected:
+        rejected.append(current_rider.id)
+    ride_request.rejected_rider_ids = rejected
     db.commit()
 
-    return {"message": "Ride rejected successfully"}
+    # Immediately advance to next nearest driver candidate
+    offer_ride_to_next_candidate(db, ride_request)
+
+    return {"message": "Ride rejected. Finding next driver."}
 
 @router.post("/rides/{request_id}/accept")
 def accept_ride(request_id: str, current_rider: Rider = Depends(get_current_rider), db: Session = Depends(get_db)):
     ride_request = db.query(RideRequest).filter(
         RideRequest.id == request_id,
-        RideRequest.status == "searching",
+        RideRequest.status.in_(["OFFERED", "SEARCHING", "searching"]),
         RideRequest.expires_at > datetime.utcnow()
     ).first()
 
     if not ride_request:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ride request not available or expired")
 
-    ride_request.status = "accepted"
+    ride_request.status = "ASSIGNED"
     ride_request.accepted_by_rider = current_rider.id
     ride_request.accepted_at = datetime.utcnow()
 
-    # OTP generate karo
+    # Generate 4-digit safety OTP for passenger pickup
     otp = ''.join([str(random.randint(0, 9)) for _ in range(4)])
+
+    vehicle = db.query(Vehicle).filter(Vehicle.rider_id == current_rider.id).first()
 
     ride = Ride(
         request_id=ride_request.id,
         user_id=ride_request.user_id,
         rider_id=current_rider.id,
+        vehicle_id=vehicle.id if vehicle else None,
+        vehicle_type=ride_request.vehicle_type or "bike",
+        payment_method=ride_request.payment_method or "cash",
+        payment_status="pending",
         pickup_lat=ride_request.pickup_lat,
         pickup_lng=ride_request.pickup_lng,
         pickup_address=ride_request.pickup_address,
         destination_lat=ride_request.destination_lat,
         destination_lng=ride_request.destination_lng,
         destination_address=ride_request.destination_address,
-        status="accepted",
+        status="ASSIGNED",
         estimated_fare=ride_request.estimated_fare,
-        base_fare=20.0,
+        base_fare=20.0 if (ride_request.vehicle_type or "bike") == "bike" else 30.0,
         distance_km=ride_request.estimated_distance,
-        distance_fare=float(ride_request.estimated_distance or 0) * 8,
+        distance_fare=float(ride_request.estimated_fare or 0) - (20.0 if (ride_request.vehicle_type or "bike") == "bike" else 30.0),
         total_fare=ride_request.estimated_fare,
         ride_otp=otp,
         otp_verified=False,
@@ -147,25 +179,38 @@ def accept_ride(request_id: str, current_rider: Rider = Depends(get_current_ride
     db.commit()
     db.refresh(ride)
 
+    user = db.query(User).filter(User.id == ride_request.user_id).first()
+
     return {
-        "message": "Ride accepted! Navigate to pickup location.",
+        "message": "Ride accepted! Navigate to customer pickup location.",
         "ride_id": str(ride.id),
+        "status": "ASSIGNED",
+        "customer_name": user.full_name if user else "Customer",
+        "customer_mobile": user.mobile_number if user else "",
         "pickup_address": ride.pickup_address,
         "pickup_lat": float(ride.pickup_lat),
         "pickup_lng": float(ride.pickup_lng),
         "destination_address": ride.destination_address,
-        "fare": float(ride.total_fare or 0)
+        "destination_lat": float(ride.destination_lat),
+        "destination_lng": float(ride.destination_lng),
+        "fare": float(ride.total_fare or 0),
+        "payment_method": ride.payment_method
     }
 
 @router.post("/rides/{ride_id}/arrived")
 def mark_arrived(ride_id: str, current_rider: Rider = Depends(get_current_rider), db: Session = Depends(get_db)):
-    ride = db.query(Ride).filter(Ride.id == ride_id, Ride.rider_id == current_rider.id, Ride.status == "accepted").first()
+    ride = db.query(Ride).filter(
+        Ride.id == ride_id,
+        Ride.rider_id == current_rider.id,
+        Ride.status.in_(["ASSIGNED", "DRIVER_ARRIVING", "accepted", "rider_arriving"])
+    ).first()
     if not ride:
-        raise HTTPException(status_code=404, detail="Ride not found")
-    ride.status = "rider_arriving"
+        raise HTTPException(status_code=404, detail="Active ride not found")
+    
+    ride.status = "DRIVER_ARRIVED"
     ride.rider_arrived_at = datetime.utcnow()
     db.commit()
-    return {"message": "Marked as arrived at pickup location"}
+    return {"message": "Marked as arrived at pickup location. Please ask customer for 4-digit OTP."}
 
 @router.post("/rides/{ride_id}/start")
 def start_ride(
@@ -174,30 +219,31 @@ def start_ride(
     current_rider: Rider = Depends(get_current_rider),
     db: Session = Depends(get_db)
 ):
-    """OTP verify karke ride start karo"""
+    """Verify 4-digit OTP and transition to IN_PROGRESS"""
     ride = db.query(Ride).filter(
         Ride.id == ride_id,
         Ride.rider_id == current_rider.id,
-        Ride.status == "rider_arriving"
+        Ride.status.in_(["DRIVER_ARRIVED", "ASSIGNED", "rider_arriving", "accepted"])
     ).first()
 
     if not ride:
-        raise HTTPException(status_code=404, detail="Ride not found")
+        raise HTTPException(status_code=404, detail="Ride not found or already started")
 
-    # OTP verify karo
-    if ride.ride_otp != otp:
+    # OTP verification
+    if ride.ride_otp != otp.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OTP. Please ask customer for correct OTP."
+            detail="Invalid 4-digit OTP. Please ask customer for the correct OTP."
         )
 
-    ride.status = "ride_started"
+    ride.status = "IN_PROGRESS"
     ride.ride_started_at = datetime.utcnow()
     ride.otp_verified = True
     db.commit()
 
     return {
-        "message": "Ride started! Navigate to destination.",
+        "message": "OTP Verified! Ride started. Navigate to destination.",
+        "status": "IN_PROGRESS",
         "destination_address": ride.destination_address,
         "destination_lat": float(ride.destination_lat),
         "destination_lng": float(ride.destination_lng)
@@ -205,44 +251,79 @@ def start_ride(
 
 @router.post("/rides/{ride_id}/complete")
 def complete_ride(ride_id: str, current_rider: Rider = Depends(get_current_rider), db: Session = Depends(get_db)):
-    ride = db.query(Ride).filter(Ride.id == ride_id, Ride.rider_id == current_rider.id, Ride.status == "ride_started").first()
+    ride = db.query(Ride).filter(
+        Ride.id == ride_id,
+        Ride.rider_id == current_rider.id,
+        Ride.status.in_(["IN_PROGRESS", "ride_started"])
+    ).first()
     if not ride:
-        raise HTTPException(status_code=404, detail="Ride not found")
+        raise HTTPException(status_code=404, detail="Active in-progress ride not found")
 
-    ride.status = "completed"
+    ride.status = "COMPLETED"
     ride.ride_ended_at = datetime.utcnow()
 
+    # Calculate waiting time fare if any
     if ride.rider_arrived_at and ride.ride_started_at:
-        waiting_minutes = int((ride.ride_started_at - ride.rider_arrived_at).total_seconds() / 60)
+        waiting_minutes = max(0, int((ride.ride_started_at - ride.rider_arrived_at).total_seconds() / 60))
         ride.waiting_minutes = waiting_minutes
-        ride.waiting_fare = waiting_minutes * 1.0
+        ride.waiting_fare = waiting_minutes * (1.0 if (ride.vehicle_type or "bike") == "bike" else 1.5)
         ride.total_fare = float(ride.base_fare or 20) + float(ride.distance_fare or 0) + float(ride.waiting_fare or 0)
 
-    payment = Payment(
-        ride_id=ride.id,
-        user_id=ride.user_id,
-        rider_id=current_rider.id,
-        amount=ride.total_fare,
-        payment_method="cash",
-        payment_status="completed",
-        paid_at=datetime.utcnow()
-    )
-    db.add(payment)
+    db.commit()
 
-    current_rider.total_rides += 1
+    return {
+        "message": "Destination reached! Please collect payment.",
+        "status": "COMPLETED",
+        "total_fare": float(ride.total_fare or 0),
+        "payment_method": ride.payment_method or "cash",
+        "payment_status": ride.payment_status or "pending",
+        "ride_summary": {
+            "distance_km": float(ride.distance_km or 0),
+            "base_fare": float(ride.base_fare or 20),
+            "waiting_minutes": ride.waiting_minutes or 0,
+            "total_fare": float(ride.total_fare or 0)
+        }
+    }
+
+@router.post("/rides/{ride_id}/confirm-payment")
+def confirm_payment(ride_id: str, current_rider: Rider = Depends(get_current_rider), db: Session = Depends(get_db)):
+    ride = db.query(Ride).filter(
+        Ride.id == ride_id,
+        Ride.rider_id == current_rider.id,
+        Ride.status.in_(["COMPLETED", "completed"])
+    ).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Completed ride not found")
+
+    ride.payment_status = "completed"
+    ride.status = "PAYMENT_COMPLETED"
+
+    # Record Payment entry
+    payment = db.query(Payment).filter(Payment.ride_id == ride.id).first()
+    if not payment:
+        payment = Payment(
+            ride_id=ride.id,
+            user_id=ride.user_id,
+            rider_id=current_rider.id,
+            amount=ride.total_fare or 0,
+            payment_method=ride.payment_method or "cash",
+            payment_status="completed",
+            paid_at=datetime.utcnow()
+        )
+        db.add(payment)
+    else:
+        payment.payment_status = "completed"
+        payment.paid_at = datetime.utcnow()
+
+    # Update driver lifetime stats
+    current_rider.total_rides = (current_rider.total_rides or 0) + 1
     current_rider.total_earnings = float(current_rider.total_earnings or 0) + float(ride.total_fare or 0)
     db.commit()
 
     return {
-        "message": "Ride completed successfully!",
-        "ride_summary": {
-            "distance_km": float(ride.distance_km or 0),
-            "base_fare": float(ride.base_fare or 20),
-            "distance_fare": float(ride.distance_fare or 0),
-            "waiting_fare": float(ride.waiting_fare or 0),
-            "total_fare": float(ride.total_fare or 0),
-            "payment_method": "cash"
-        }
+        "message": "Payment confirmed! Ready for next ride.",
+        "status": "PAYMENT_COMPLETED",
+        "amount_collected": float(ride.total_fare or 0)
     }
 
 @router.get("/earnings")
