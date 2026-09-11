@@ -1,8 +1,8 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map/flutter_map.dart' show PolylineLayer, Polyline;
 import 'package:latlong2/latlong.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -221,8 +221,14 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
+  String _selectedVehicle = 'bike';
+  String _selectedPayment = 'cash';
+  Map<String, dynamic>? _bikeFare;
+  Map<String, dynamic>? _autoFare;
+
   Future<void> _getFareEstimate() async {
     if (_destinationLocation == null) return;
+    setState(() => _fareLoading = true);
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
@@ -236,19 +242,61 @@ class _BookingScreenState extends State<BookingScreen> {
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
+      
+      if (res.data['options'] != null) {
+        final options = res.data['options'] as List;
+        for (var opt in options) {
+          if (opt['vehicle_type'] == 'bike') _bikeFare = opt;
+          if (opt['vehicle_type'] == 'auto') _autoFare = opt;
+        }
+      }
+      
       setState(() {
         _fareEstimate = res.data;
         _fareLoading = false;
       });
     } catch (e) {
+      // Local calculation fallback in case of connection drop
+      final dist = _calculateLocalDistance(
+        widget.currentLocation.latitude,
+        widget.currentLocation.longitude,
+        _destinationLocation!.latitude,
+        _destinationLocation!.longitude,
+      );
+      _bikeFare = {
+        'vehicle_type': 'bike',
+        'label': 'Bike',
+        'base_fare': 20.0,
+        'distance_km': dist,
+        'distance_fare': (dist * 8.0).roundToDouble(),
+        'total_fare': (20.0 + dist * 8.0).roundToDouble(),
+        'estimated_time_minutes': (dist * 2.5).ceil().clamp(3, 60),
+      };
+      _autoFare = {
+        'vehicle_type': 'auto',
+        'label': 'Auto',
+        'base_fare': 30.0,
+        'distance_km': dist,
+        'distance_fare': (dist * 12.0).roundToDouble(),
+        'total_fare': (30.0 + dist * 12.0).roundToDouble(),
+        'estimated_time_minutes': (dist * 3.0).ceil().clamp(4, 60),
+      };
       setState(() => _fareLoading = false);
     }
+  }
+
+  double _calculateLocalDistance(double lat1, double lon1, double lat2, double lon2) {
+    const p = 0.017453292519943295;
+    final a = 0.5 - math.cos((lat2 - lat1) * p)/2 + 
+              math.cos(lat1 * p) * math.cos(lat2 * p) * 
+              (1 - math.cos((lon2 - lon1) * p))/2;
+    return (12742 * math.asin(math.sqrt(a)) * 10).round() / 10;
   }
 
   Future<void> _bookRide() async {
     if (_destinationLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select destination')),
+        const SnackBar(content: Text('Please select destination location')),
       );
       return;
     }
@@ -264,24 +312,29 @@ class _BookingScreenState extends State<BookingScreen> {
           'pickup_address': _pickupAddress,
           'destination_lat': _destinationLocation!.latitude,
           'destination_lng': _destinationLocation!.longitude,
-          'destination_address': _destinationController.text,
+          'destination_address': _destinationController.text.trim(),
+          'vehicle_type': _selectedVehicle,
+          'payment_method': _selectedPayment,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       if (!mounted) return;
+      
+      final activeFare = _selectedVehicle == 'auto' ? _autoFare : _bikeFare;
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (_) => RideSearchingScreen(
             requestId: res.data['ride_request_id'],
-            fareEstimate: _fareEstimate,
-            destination: _destinationController.text,
+            fareEstimate: activeFare,
+            destination: _destinationController.text.trim(),
           ),
         ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error booking ride. Try again.')),
+        const SnackBar(content: Text('Unable to connect to riders. Please try again.')),
       );
     }
     setState(() => _loading = false);
@@ -471,57 +524,89 @@ class _BookingScreenState extends State<BookingScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Fare Estimate
+                  // Ride Options (Bike vs Auto)
                   if (_fareLoading)
                     const Center(
-                        child: CircularProgressIndicator(
-                            color: Color(0xFFFFD000))),
-
-                  if (_fareEstimate != null && !_fareLoading)
-                    FadeInUp(
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1A),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('Fare Estimate',
-                                    style: GoogleFonts.poppins(
-                                        color: Colors.white70,
-                                        fontSize: 13)),
-                                Text(
-                                  '₹${_fareEstimate!['total_fare']}',
-                                  style: GoogleFonts.poppins(
-                                    color: const Color(0xFFFFD000),
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Divider(color: Colors.white24),
-                            Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
-                              children: [
-                                _FareRow('Base Fare',
-                                    '₹${_fareEstimate!['base_fare']}'),
-                                _FareRow('Distance',
-                                    '${_fareEstimate!['distance_km']} km'),
-                                _FareRow('Time',
-                                    '~${_fareEstimate!['estimated_time_minutes']} min'),
-                              ],
-                            ),
-                          ],
-                        ),
+                      child: Padding(
+                        padding: EdgeInsets.all(20.0),
+                        child: CircularProgressIndicator(color: Color(0xFFFFD000)),
                       ),
                     ),
+
+                  if ((_bikeFare != null || _autoFare != null) && !_fareLoading) ...[
+                    Text(
+                      'Choose Ride Option',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Bike Option Card
+                    if (_bikeFare != null)
+                      _buildVehicleCard(
+                        type: 'bike',
+                        icon: Icons.electric_bike_rounded,
+                        title: 'Ashta Bike',
+                        subtitle: 'Fastest for 1 person • ~${_bikeFare!['estimated_time_minutes']} min',
+                        price: '₹${_bikeFare!['total_fare']}',
+                        isSelected: _selectedVehicle == 'bike',
+                        onTap: () => setState(() => _selectedVehicle = 'bike'),
+                      ),
+
+                    const SizedBox(height: 10),
+
+                    // Auto Option Card
+                    if (_autoFare != null)
+                      _buildVehicleCard(
+                        type: 'auto',
+                        icon: Icons.local_taxi_rounded,
+                        title: 'Ashta Auto',
+                        subtitle: 'Spacious for 3-4 persons • ~${_autoFare!['estimated_time_minutes']} min',
+                        price: '₹${_autoFare!['total_fare']}',
+                        isSelected: _selectedVehicle == 'auto',
+                        onTap: () => setState(() => _selectedVehicle = 'auto'),
+                      ),
+
+                    const SizedBox(height: 16),
+
+                    // Payment Method Selector
+                    Text(
+                      'Payment Method',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildPaymentChip(
+                            type: 'cash',
+                            icon: Icons.payments_rounded,
+                            label: 'Cash to Driver',
+                            isSelected: _selectedPayment == 'cash',
+                            onTap: () => setState(() => _selectedPayment = 'cash'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildPaymentChip(
+                            type: 'upi',
+                            icon: Icons.qr_code_rounded,
+                            label: 'UPI / QR Code',
+                            isSelected: _selectedPayment == 'upi',
+                            onTap: () => setState(() => _selectedPayment = 'upi'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -532,24 +617,40 @@ class _BookingScreenState extends State<BookingScreen> {
             padding: const EdgeInsets.all(16),
             child: SizedBox(
               width: double.infinity,
+              height: 56,
               child: ElevatedButton(
-                onPressed: _loading ? null : _bookRide,
+                onPressed: (_loading || _destinationLocation == null) ? null : _bookRide,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFFD000),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  disabledBackgroundColor: Colors.grey[300],
+                  elevation: 0,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
                 child: _loading
-                    ? const CircularProgressIndicator(
-                        color: Color(0xFF1A1A1A))
-                    : Text(
-                        'Book Ride 🏍️',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF1A1A1A),
-                        ),
+                    ? const CircularProgressIndicator(color: Color(0xFF1A1A1A))
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _selectedVehicle == 'auto'
+                                ? Icons.local_taxi_rounded
+                                : Icons.electric_bike_rounded,
+                            color: const Color(0xFF1A1A1A),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _selectedVehicle == 'auto'
+                                ? 'Book Auto (${_autoFare != null ? '₹${_autoFare!['total_fare']}' : ''})'
+                                : 'Book Bike (${_bikeFare != null ? '₹${_bikeFare!['total_fare']}' : ''})',
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF1A1A1A),
+                            ),
+                          ),
+                        ],
                       ),
               ),
             ),
@@ -558,24 +659,115 @@ class _BookingScreenState extends State<BookingScreen> {
       ),
     );
   }
-}
 
-class _FareRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _FareRow(this.label, this.value);
+  Widget _buildVehicleCard({
+    required String type,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String price,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? const Color(0xFFFFD000) : const Color(0xFFE2E8F0),
+            width: isSelected ? 2.0 : 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFFFFD000) : Colors.grey[200],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: const Color(0xFF1A1A1A), size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: const Color(0xFF1A1A1A),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              price,
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF1A1A1A),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(label,
-            style: GoogleFonts.poppins(
-                color: Colors.white54, fontSize: 11)),
-        Text(value,
-            style: GoogleFonts.poppins(
-                color: Colors.white, fontWeight: FontWeight.w600)),
-      ],
+  Widget _buildPaymentChip({
+    required String type,
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1A1A1A) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF1A1A1A) : const Color(0xFFCBD5E1),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? const Color(0xFFFFD000) : Colors.grey[700],
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF1A1A1A),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

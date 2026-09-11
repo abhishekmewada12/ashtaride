@@ -54,32 +54,43 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
 
-      final status = res.data['status'];
-      setState(() => _status = status);
+      final status = res.data['status']?.toString();
+      if (status != null && mounted) {
+        setState(() => _status = status);
+      }
 
-      if (status == 'accepted' && res.data['ride'] != null) {
+      // Check if driver assigned/accepted
+      if ((status == 'ASSIGNED' || status == 'accepted') && res.data['ride'] != null) {
         _statusTimer?.cancel();
         if (!mounted) return;
+        
+        final rideData = res.data['ride'];
+        final riderData = rideData['rider'] ?? {};
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (_) => RideActiveScreen(
-              rideId: res.data['ride']['ride_id'],
-              riderName: res.data['ride']['rider_name'],
-              riderMobile: res.data['ride']['rider_mobile'],
-              riderRating: res.data['ride']['rider_rating'].toString(),
-              totalFare: res.data['ride']['total_fare'].toString(),
+              rideId: rideData['ride_id'] ?? '',
+              riderName: riderData['name'] ?? rideData['rider_name'] ?? 'Ashta Rider',
+              riderMobile: riderData['mobile'] ?? rideData['rider_mobile'] ?? '',
+              riderRating: (riderData['rating'] ?? rideData['rider_rating'] ?? '5.0').toString(),
+              totalFare: (rideData['total_fare'] ?? '50').toString(),
               destination: widget.destination,
+              rideOtp: rideData['ride_otp']?.toString(),
+              vehicleType: riderData['vehicle_type']?.toString() ?? 'bike',
+              vehiclePlate: riderData['vehicle_plate']?.toString() ?? 'MP-04-XX-0000',
+              vehicleModel: riderData['vehicle_model']?.toString() ?? 'Bike',
             ),
           ),
         );
-      } else if (status == 'expired' || status == 'no_riders') {
+      } else if (status == 'CANCELLED_NO_DRIVER' || status == 'expired' || status == 'no_riders') {
         _statusTimer?.cancel();
         if (!mounted) return;
         _showNoRidersDialog();
       }
     } catch (e) {
-      // Retry
+      // Polling retry
     }
   }
 
@@ -89,10 +100,16 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('No Riders Available', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+        title: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Color(0xFF1A1A1A)),
+            const SizedBox(width: 8),
+            Text('No Riders Available', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
         content: Text(
-          'No riders available nearby right now. Please try again in a few minutes.',
-          style: GoogleFonts.poppins(),
+          'All riders in Ashta are currently busy or offline. Please try again in 1-2 minutes.',
+          style: GoogleFonts.poppins(fontSize: 14),
         ),
         actions: [
           ElevatedButton(
@@ -100,8 +117,11 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
               Navigator.pop(context);
               Navigator.pop(context);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFD000)),
-            child: Text('OK', style: GoogleFonts.poppins(color: const Color(0xFF1A1A1A))),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFD000),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('OK', style: GoogleFonts.poppins(color: const Color(0xFF1A1A1A), fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -110,7 +130,15 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
 
   Future<void> _cancelRide() async {
     _statusTimer?.cancel();
-    Navigator.pop(context);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      await _dio.post(
+        '/api/v1/rides/${widget.requestId}/cancel',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } catch (_) {}
+    if (mounted) Navigator.pop(context);
   }
 
   @override

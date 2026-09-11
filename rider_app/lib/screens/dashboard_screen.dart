@@ -607,6 +607,12 @@ onPressed: () {
                                         estimatedDistance: ride[
                                                 'estimated_distance']
                                             .toString(),
+                                        vehicleType:
+                                            ride['vehicle_type'] ?? 'bike',
+                                        paymentMethod:
+                                            ride['payment_method'] ?? 'cash',
+                                        initialExpiresInSeconds:
+                                            ride['expires_in_seconds'] ?? 30,
                                       ),
                                     ),
                                   ).then((_) => _fetchAvailableRides());
@@ -684,7 +690,7 @@ class _StatCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
             ),
           ],
@@ -694,7 +700,7 @@ class _StatCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFD000).withOpacity(0.15),
+                color: const Color(0xFFFFD000).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
               child:
@@ -742,7 +748,7 @@ class _RideCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
           ),
         ],
@@ -754,7 +760,7 @@ class _RideCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFD000).withOpacity(0.15),
+                  color: const Color(0xFFFFD000).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.electric_bike,
@@ -787,7 +793,7 @@ class _RideCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(

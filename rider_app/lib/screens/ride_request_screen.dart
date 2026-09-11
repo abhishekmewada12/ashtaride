@@ -3,10 +3,9 @@ import 'package:animate_do/animate_do.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 import 'active_ride_screen.dart';
 
 class RideRequestScreen extends StatefulWidget {
@@ -15,6 +14,9 @@ class RideRequestScreen extends StatefulWidget {
   final String destinationAddress;
   final String estimatedFare;
   final String estimatedDistance;
+  final String vehicleType;
+  final String paymentMethod;
+  final int initialExpiresInSeconds;
 
   const RideRequestScreen({
     super.key,
@@ -23,6 +25,9 @@ class RideRequestScreen extends StatefulWidget {
     required this.destinationAddress,
     required this.estimatedFare,
     required this.estimatedDistance,
+    this.vehicleType = 'bike',
+    this.paymentMethod = 'cash',
+    this.initialExpiresInSeconds = 30,
   });
 
   @override
@@ -32,11 +37,17 @@ class RideRequestScreen extends StatefulWidget {
 class _RideRequestScreenState extends State<RideRequestScreen> {
   final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
   bool _loading = false;
+  late int _secondsRemaining;
+  Timer? _countdownTimer;
 
   @override
   void initState() {
     super.initState();
-    // Play loud incoming ride ringtone & vibration like Rapido / Uber
+    _secondsRemaining = widget.initialExpiresInSeconds > 0
+        ? widget.initialExpiresInSeconds
+        : 30;
+
+    // Start loud incoming ride ringtone & vibration
     try {
       FlutterRingtonePlayer().play(
         android: AndroidSounds.ringtone,
@@ -47,10 +58,26 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
       );
       HapticFeedback.vibrate();
     } catch (_) {}
+
+    // Start 30s countdown timer
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_secondsRemaining > 1) {
+        setState(() => _secondsRemaining--);
+        if (_secondsRemaining % 2 == 0) {
+          try {
+            HapticFeedback.selectionClick();
+          } catch (_) {}
+        }
+      } else {
+        timer.cancel();
+        _autoExpireAndReject();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     try {
       FlutterRingtonePlayer().stop();
     } catch (_) {}
@@ -62,41 +89,7 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
     return prefs.getString('rider_token');
   }
 
-  Future<void> _acceptRide() async {
-    try {
-      FlutterRingtonePlayer().stop();
-    } catch (_) {}
-    setState(() => _loading = true);
-    try {
-      final token = await _getToken();
-      final res = await _dio.post(
-        '/api/v1/riders/rides/${widget.requestId}/accept',
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ActiveRideScreen(
-            rideId: res.data['ride_id'],
-            pickupAddress: res.data['pickup_address'],
-            destinationAddress: res.data['destination_address'],
-            fare: res.data['fare'].toString(),
-            pickupLat: res.data['pickup_lat'],
-            pickupLng: res.data['pickup_lng'],
-          ),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ride no longer available!')),
-      );
-      Navigator.pop(context);
-    }
-    setState(() => _loading = false);
-  }
-
-  Future<void> _rejectRide() async {
+  Future<void> _autoExpireAndReject() async {
     try {
       FlutterRingtonePlayer().stop();
     } catch (_) {}
@@ -106,42 +99,145 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
         '/api/v1/riders/rides/${widget.requestId}/reject',
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
+    } catch (_) {}
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Offer expired. Passing to next driver.',
+            style: GoogleFonts.poppins()),
+        backgroundColor: const Color(0xFF1A1A1A),
+      ),
+    );
+    Navigator.pop(context);
+  }
+
+  Future<void> _acceptRide() async {
+    _countdownTimer?.cancel();
+    try {
+      FlutterRingtonePlayer().stop();
+    } catch (_) {}
+    setState(() => _loading = true);
+
+    try {
+      final token = await _getToken();
+      final res = await _dio.post(
+        '/api/v1/riders/rides/${widget.requestId}/accept',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActiveRideScreen(
+            rideId: res.data['ride_id'].toString(),
+            pickupAddress: res.data['pickup_address'] ?? widget.pickupAddress,
+            destinationAddress:
+                res.data['destination_address'] ?? widget.destinationAddress,
+            fare: (res.data['fare'] ?? widget.estimatedFare).toString(),
+            pickupLat: (res.data['pickup_lat'] as num?)?.toDouble() ?? 22.9734,
+            pickupLng: (res.data['pickup_lng'] as num?)?.toDouble() ?? 76.6178,
+            destinationLat:
+                (res.data['destination_lat'] as num?)?.toDouble() ?? 22.9780,
+            destinationLng:
+                (res.data['destination_lng'] as num?)?.toDouble() ?? 76.6230,
+            customerName: res.data['customer_name'] ?? 'Customer',
+            customerMobile: res.data['customer_mobile'] ?? '',
+            vehicleType: widget.vehicleType,
+            paymentMethod: widget.paymentMethod,
+          ),
+        ),
+      );
     } catch (e) {
-      // Silent fail
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ride no longer available or already accepted.',
+                style: GoogleFonts.poppins()),
+            backgroundColor: const Color(0xFF1A1A1A),
+          ),
+        );
+        Navigator.pop(context);
+      }
     }
+
+    if (mounted) {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _rejectRide() async {
+    _countdownTimer?.cancel();
+    try {
+      FlutterRingtonePlayer().stop();
+    } catch (_) {}
+    try {
+      final token = await _getToken();
+      await _dio.post(
+        '/api/v1/riders/rides/${widget.requestId}/reject',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } catch (_) {}
     if (!mounted) return;
     Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
+    final isAuto = widget.vehicleType.toLowerCase() == 'auto';
+    final progressVal = (_secondsRemaining / 30.0).clamp(0.0, 1.0);
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
-            // Header
+            // Header Bar
             FadeInDown(
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                color: const Color(0xFFFFD000),
-                child: Column(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      'New Ride Request! 🏍️',
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFD000),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isAuto ? Icons.local_taxi : Icons.two_wheeler,
                         color: const Color(0xFF1A1A1A),
+                        size: 24,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Accept quickly before it expires!',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: const Color(0xFF1A1A1A).withOpacity(0.7),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isAuto ? 'Ashta Auto Request 🛺' : 'Ashta Bike Request 🏍️',
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            'Exclusive Offer (Nearest Driver)',
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              color: const Color(0xFFFFD000),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -154,13 +250,72 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    // Fare Card
+                    // 30-Second Circular Countdown Timer
+                    FadeInDown(
+                      delay: const Duration(milliseconds: 100),
+                      child: Center(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            SizedBox(
+                              width: 110,
+                              height: 110,
+                              child: CircularProgressIndicator(
+                                value: progressVal,
+                                strokeWidth: 8,
+                                backgroundColor: Colors.grey.shade200,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  _secondsRemaining <= 5
+                                      ? Colors.red
+                                      : const Color(0xFFFFD000),
+                                ),
+                              ),
+                            ),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '$_secondsRemaining',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    color: _secondsRemaining <= 5
+                                        ? Colors.red
+                                        : const Color(0xFF1A1A1A),
+                                  ),
+                                ),
+                                Text(
+                                  'sec left',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Fare & Distance Card
                     FadeInUp(
+                      delay: const Duration(milliseconds: 150),
                       child: Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: const Color(0xFF1A1A1A),
                           borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -168,14 +323,14 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Ride Fare',
+                                Text('Driver Earnings',
                                     style: GoogleFonts.poppins(
-                                        color: Colors.white54, fontSize: 13)),
+                                        color: Colors.white54, fontSize: 12)),
                                 Text(
                                   '₹${widget.estimatedFare}',
                                   style: GoogleFonts.poppins(
                                     color: const Color(0xFFFFD000),
-                                    fontSize: 32,
+                                    fontSize: 34,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -186,7 +341,7 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                               children: [
                                 Text('Distance',
                                     style: GoogleFonts.poppins(
-                                        color: Colors.white54, fontSize: 13)),
+                                        color: Colors.white54, fontSize: 12)),
                                 Text(
                                   '${widget.estimatedDistance} km',
                                   style: GoogleFonts.poppins(
@@ -202,7 +357,7 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 18),
 
                     // Location Card
                     FadeInUp(
@@ -210,19 +365,20 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.grey[50],
+                          color: Colors.grey.shade50,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.grey[200]!),
+                          border: Border.all(color: Colors.grey.shade200),
                         ),
                         child: Column(
                           children: [
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFFFD000)
-                                        .withOpacity(0.2),
+                                        .withValues(alpha: 0.2),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(Icons.my_location,
@@ -234,15 +390,18 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text('Pickup',
+                                      Text('PICKUP LOCATION',
                                           style: GoogleFonts.poppins(
-                                              fontSize: 11,
-                                              color: Colors.grey[500])),
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.grey.shade500)),
+                                      const SizedBox(height: 2),
                                       Text(
                                         widget.pickupAddress,
                                         style: GoogleFonts.poppins(
                                             fontWeight: FontWeight.w600,
-                                            fontSize: 13),
+                                            fontSize: 13,
+                                            color: const Color(0xFF1A1A1A)),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -252,17 +411,22 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                               ],
                             ),
                             Padding(
-                              padding:
-                                  const EdgeInsets.only(left: 18, top: 4, bottom: 4),
-                              child: Container(
-                                  width: 2, height: 20, color: Colors.grey[300]),
+                              padding: const EdgeInsets.only(left: 18, top: 4, bottom: 4),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                    width: 2,
+                                    height: 20,
+                                    color: Colors.grey.shade300),
+                              ),
                             ),
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(0.1),
+                                    color: Colors.red.withValues(alpha: 0.1),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(Icons.location_on,
@@ -274,15 +438,18 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text('Destination',
+                                      Text('DESTINATION DROP',
                                           style: GoogleFonts.poppins(
-                                              fontSize: 11,
-                                              color: Colors.grey[500])),
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.grey.shade500)),
+                                      const SizedBox(height: 2),
                                       Text(
                                         widget.destinationAddress,
                                         style: GoogleFonts.poppins(
                                             fontWeight: FontWeight.w600,
-                                            fontSize: 13),
+                                            fontSize: 13,
+                                            color: const Color(0xFF1A1A1A)),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -296,29 +463,46 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 18),
 
-                    // Payment info
+                    // Payment Method Card
                     FadeInUp(
-                      delay: const Duration(milliseconds: 300),
+                      delay: const Duration(milliseconds: 250),
                       child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.08),
+                          color: widget.paymentMethod == 'upi'
+                              ? Colors.purple.withValues(alpha: 0.08)
+                              : Colors.green.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                              color: Colors.green.withOpacity(0.3)),
+                            color: widget.paymentMethod == 'upi'
+                                ? Colors.purple.withValues(alpha: 0.3)
+                                : Colors.green.withValues(alpha: 0.3),
+                          ),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.payments,
-                                color: Colors.green, size: 20),
+                            Icon(
+                              widget.paymentMethod == 'upi'
+                                  ? Icons.qr_code_scanner
+                                  : Icons.payments,
+                              color: widget.paymentMethod == 'upi'
+                                  ? Colors.purple
+                                  : Colors.green,
+                              size: 20,
+                            ),
                             const SizedBox(width: 10),
                             Text(
-                              'Cash Payment — ₹${widget.estimatedFare}',
+                              widget.paymentMethod == 'upi'
+                                  ? 'Online / UPI Payment — ₹${widget.estimatedFare}'
+                                  : 'Cash Payment — ₹${widget.estimatedFare}',
                               style: GoogleFonts.poppins(
-                                color: Colors.green[700],
+                                color: widget.paymentMethod == 'upi'
+                                    ? Colors.purple.shade700
+                                    : Colors.green.shade700,
                                 fontWeight: FontWeight.w600,
+                                fontSize: 13,
                               ),
                             ),
                           ],
@@ -332,8 +516,18 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
 
             // Action Buttons
             FadeInUp(
-              child: Padding(
+              child: Container(
                 padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
+                ),
                 child: Row(
                   children: [
                     // Reject
@@ -342,15 +536,16 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                         onPressed: _rejectRide,
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          side: const BorderSide(color: Colors.red),
+                          side: const BorderSide(color: Colors.red, width: 1.5),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(14)),
                         ),
                         child: Text(
-                          'Reject ❌',
+                          'Pass / Reject ❌',
                           style: GoogleFonts.poppins(
                             color: Colors.red,
                             fontWeight: FontWeight.bold,
+                            fontSize: 14,
                           ),
                         ),
                       ),
@@ -365,17 +560,25 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                           backgroundColor: const Color(0xFFFFD000),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(14)),
+                          elevation: 2,
                         ),
                         child: _loading
-                            ? const CircularProgressIndicator(
-                                color: Color(0xFF1A1A1A))
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  color: Color(0xFF1A1A1A),
+                                  strokeWidth: 2.5,
+                                ),
+                              )
                             : Text(
-                                'Accept ✅',
+                                'ACCEPT RIDE ✅',
                                 style: GoogleFonts.poppins(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                                  fontSize: 15,
                                   color: const Color(0xFF1A1A1A),
+                                  letterSpacing: 0.5,
                                 ),
                               ),
                       ),

@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 
 class DocumentUploadScreen extends StatefulWidget {
   final String mobileNumber;
@@ -221,11 +220,11 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFD000).withOpacity(0.1),
+                  color: const Color(0xFFFFD000).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                       color:
-                          const Color(0xFFFFD000).withOpacity(0.3)),
+                          const Color(0xFFFFD000).withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
@@ -550,10 +549,10 @@ class _PickOption extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFD000).withOpacity(0.1),
+          color: const Color(0xFFFFD000).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-              color: const Color(0xFFFFD000).withOpacity(0.3)),
+              color: const Color(0xFFFFD000).withValues(alpha: 0.3)),
         ),
         child: Column(
           children: [

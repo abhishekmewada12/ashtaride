@@ -41,6 +41,8 @@ class OTPRecord(Base):
     mobile_number = Column(String(15), nullable=False)
     otp_code      = Column(String(6), nullable=False)
     otp_type      = Column(String(20), nullable=False)
+    attempts      = Column(Integer, default=0)
+    locked_until  = Column(DateTime(timezone=True), nullable=True)
     is_used       = Column(Boolean, default=False)
     expires_at    = Column(DateTime(timezone=True), nullable=False)
     created_at    = Column(DateTime(timezone=True), server_default=func.now())

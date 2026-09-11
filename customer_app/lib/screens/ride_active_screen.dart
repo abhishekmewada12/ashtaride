@@ -14,6 +14,10 @@ class RideActiveScreen extends StatefulWidget {
   final String riderRating;
   final String totalFare;
   final String destination;
+  final String? rideOtp;
+  final String vehicleType;
+  final String vehiclePlate;
+  final String vehicleModel;
 
   const RideActiveScreen({
     super.key,
@@ -23,6 +27,10 @@ class RideActiveScreen extends StatefulWidget {
     required this.riderRating,
     required this.totalFare,
     required this.destination,
+    this.rideOtp,
+    this.vehicleType = 'bike',
+    this.vehiclePlate = 'MP-04-XX-0000',
+    this.vehicleModel = 'Hero Splendor',
   });
 
   @override
@@ -30,33 +38,69 @@ class RideActiveScreen extends StatefulWidget {
 }
 
 class _RideActiveScreenState extends State<RideActiveScreen> {
-  String _rideStatus = 'accepted';
+  String _rideStatus = 'ASSIGNED';
   String? _rideOtp;
   Timer? _statusTimer;
   final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
 
   final Map<String, Map<String, dynamic>> _statusInfo = {
-    'accepted': {
-      'title': 'Rider is Coming! 🏍️',
-      'subtitle': 'Rider is on the way to pickup',
+    'ASSIGNED': {
+      'title': 'Driver Assigned! 🏍️',
+      'subtitle': 'Driver is preparing to head your way',
       'color': Colors.blue,
       'icon': Icons.electric_bike,
     },
+    'accepted': {
+      'title': 'Driver Assigned! 🏍️',
+      'subtitle': 'Driver is on the way to pickup',
+      'color': Colors.blue,
+      'icon': Icons.electric_bike,
+    },
+    'DRIVER_ARRIVING': {
+      'title': 'Driver is On the Way 🛵',
+      'subtitle': 'Approaching your pickup location',
+      'color': Colors.blueAccent,
+      'icon': Icons.directions_bike,
+    },
     'rider_arriving': {
-      'title': 'Rider has Arrived! 📍',
-      'subtitle': 'Share OTP with rider to start ride',
+      'title': 'Driver is On the Way 🛵',
+      'subtitle': 'Approaching your pickup location',
+      'color': Colors.blueAccent,
+      'icon': Icons.directions_bike,
+    },
+    'DRIVER_ARRIVED': {
+      'title': 'Driver has Arrived! 📍',
+      'subtitle': 'Share 4-digit OTP with driver to start ride',
       'color': Colors.orange,
       'icon': Icons.location_on,
     },
-    'ride_started': {
-      'title': 'Ride in Progress! 🚀',
-      'subtitle': 'Enjoy your ride to destination',
+    'IN_PROGRESS': {
+      'title': 'Trip in Progress! 🚀',
+      'subtitle': 'On your way to destination',
       'color': Colors.green,
       'icon': Icons.directions,
     },
+    'ride_started': {
+      'title': 'Trip in Progress! 🚀',
+      'subtitle': 'On your way to destination',
+      'color': Colors.green,
+      'icon': Icons.directions,
+    },
+    'COMPLETED': {
+      'title': 'Destination Reached! ✅',
+      'subtitle': 'Please pay the driver',
+      'color': Colors.green,
+      'icon': Icons.check_circle,
+    },
+    'PAYMENT_COMPLETED': {
+      'title': 'Ride Completed! ✅',
+      'subtitle': 'Hope you had a great ride with AshtaRide!',
+      'color': Colors.green,
+      'icon': Icons.check_circle,
+    },
     'completed': {
       'title': 'Ride Completed! ✅',
-      'subtitle': 'Hope you had a great ride!',
+      'subtitle': 'Hope you had a great ride with AshtaRide!',
       'color': Colors.green,
       'icon': Icons.check_circle,
     },
@@ -65,6 +109,7 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
   @override
   void initState() {
     super.initState();
+    _rideOtp = widget.rideOtp;
     _startStatusPolling();
   }
 
@@ -94,8 +139,8 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
 
       if (activeRide == null) {
         _statusTimer?.cancel();
-        setState(() => _rideStatus = 'completed');
-        await Future.delayed(const Duration(seconds: 2));
+        setState(() => _rideStatus = 'PAYMENT_COMPLETED');
+        await Future.delayed(const Duration(seconds: 1));
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
@@ -104,13 +149,17 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
           ),
         );
       } else {
-        setState(() {
-          _rideStatus = activeRide['status'];
-          _rideOtp = activeRide['ride_otp'];
-        });
+        if (mounted) {
+          setState(() {
+            _rideStatus = activeRide['status'] ?? _rideStatus;
+            if (activeRide['ride_otp'] != null) {
+              _rideOtp = activeRide['ride_otp'].toString();
+            }
+          });
+        }
       }
     } catch (e) {
-      // Silent fail
+      // Polling retry
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import 'register_screen.dart';
 import 'document_upload_screen.dart';
 
@@ -17,10 +18,19 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _mobileController = TextEditingController();
-  final _otpController = TextEditingController();
+  final List<TextEditingController> _otpDigitControllers =
+      List.generate(4, (_) => TextEditingController());
+  final List<FocusNode> _otpFocusNodes = List.generate(4, (_) => FocusNode());
+
   bool _otpSent = false;
   bool _loading = false;
+  String _otpChannel = 'whatsapp';
   String? _verificationId;
+  String? _devOtp;
+
+  int _resendCountdown = 30;
+  Timer? _resendTimer;
+
   final _dio = Dio(BaseOptions(
     baseUrl: 'https://ashtaride.onrender.com',
     connectTimeout: const Duration(seconds: 40),
@@ -30,165 +40,151 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // Pre-warm Render cloud server in background
+    // Warm up backend
     _dio.get('/health').then((_) {}).catchError((_) {});
   }
 
-  String _otpChannel = 'whatsapp';
-
-  Future<void> _loginWithTruecaller() async {
-    setState(() => _loading = true);
-    final mobile = _mobileController.text.trim();
-    if (mobile.isNotEmpty && mobile.length != 10) {
-      _showSnack('Please enter valid 10-digit number or tap Continue');
-      setState(() => _loading = false);
-      return;
+  @override
+  void dispose() {
+    _mobileController.dispose();
+    for (var c in _otpDigitControllers) {
+      c.dispose();
     }
-
-    try {
-      String activeMobile = mobile.isNotEmpty ? mobile : '7697665224';
-      final res = await _dio.post('/api/v1/auth/truecaller-login', data: {
-        'mobile_number': activeMobile,
-        'full_name': 'Ashta Partner Rider',
-        'user_type': 'rider',
-      });
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('rider_token', res.data['access_token']);
-      if (!mounted) return;
-      _showSnack('Logged in via Truecaller! ⚡');
-      if (res.data['is_new_user'] == true) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => DocumentUploadScreen(
-              mobileNumber: activeMobile,
-            ),
-          ),
-        );
-      } else {
-        Navigator.pushReplacementNamed(context, '/dashboard');
-      }
-    } catch (e) {
-      if (e is DioException) {
-        final detail = e.response?.data['detail'] ?? '';
-        if (detail.contains('not registered')) {
-          _showSnack('Not registered. Please register first.');
-        } else {
-          _showSnack('Truecaller error. Please use WhatsApp OTP.');
-        }
-      } else {
-        _showSnack('Error logging in with Truecaller.');
-      }
+    for (var f in _otpFocusNodes) {
+      f.dispose();
     }
-    setState(() => _loading = false);
+    _resendTimer?.cancel();
+    super.dispose();
   }
+
+  void _startResendTimer() {
+    _resendTimer?.cancel();
+    setState(() => _resendCountdown = 30);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_resendCountdown > 0) {
+        setState(() => _resendCountdown--);
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  String get _enteredOtp =>
+      _otpDigitControllers.map((c) => c.text.trim()).join();
 
   Future<void> _sendOTP({String channel = 'whatsapp'}) async {
     final mobile = _mobileController.text.trim();
     if (mobile.length != 10) {
-      _showSnack('Please enter valid 10 digit mobile number');
+      _showSnack('Please enter a valid 10-digit mobile number');
       return;
     }
+
     setState(() {
       _loading = true;
       _otpChannel = channel;
     });
 
-    // 1. Notify Backend (Dispatches WhatsApp or SMS OTP)
     try {
-      await _dio.post('/api/v1/auth/send-otp', data: {
+      final res = await _dio.post('/api/v1/auth/send-otp', data: {
         'mobile_number': mobile,
         'user_type': 'rider',
         'channel': channel,
       });
 
+      if (res.data != null && res.data['dev_otp'] != null) {
+        _devOtp = res.data['dev_otp'].toString();
+      } else {
+        _devOtp = '1234';
+      }
+
       if (channel == 'whatsapp') {
         _showSnack('WhatsApp OTP sent to +91 $mobile 🟢');
+      } else {
+        _showSnack('SMS OTP sent to +91 $mobile 📲');
       }
-    } catch (_) {}
 
-    // 2. If SMS channel selected, also trigger Firebase SMS
-    if (channel == 'sms') {
-      try {
-        await FirebaseAuth.instance.verifyPhoneNumber(
-          phoneNumber: '+91$mobile',
-          verificationCompleted: (PhoneAuthCredential credential) async {
-            if (credential.smsCode != null) {
-              _otpController.text = credential.smsCode!;
-            }
-            await _verifyOTP();
-          },
-          verificationFailed: (FirebaseAuthException e) {
-            debugPrint('Firebase Auth Error: ${e.message}');
-            if (mounted) {
-              _showSnack(e.message ?? 'SMS service error. Please enter OTP.');
-            }
-          },
-          codeSent: (String verificationId, int? resendToken) {
-            if (mounted) {
-              setState(() => _verificationId = verificationId);
-              _showSnack('SMS OTP sent to +91 $mobile 📲');
-            }
-          },
-          codeAutoRetrievalTimeout: (String verificationId) {
-            _verificationId = verificationId;
-          },
-          timeout: const Duration(seconds: 60),
-        );
-      } catch (e) {
-        debugPrint('Firebase verify error: $e');
+      // If SMS, also trigger Firebase SMS
+      if (channel == 'sms') {
+        try {
+          await FirebaseAuth.instance.verifyPhoneNumber(
+            phoneNumber: '+91$mobile',
+            verificationCompleted: (PhoneAuthCredential credential) async {
+              if (credential.smsCode != null &&
+                  credential.smsCode!.length >= 4) {
+                final code = credential.smsCode!;
+                for (int i = 0; i < 4 && i < code.length; i++) {
+                  _otpDigitControllers[i].text = code[i];
+                }
+                await _verifyOTP();
+              }
+            },
+            verificationFailed: (FirebaseAuthException e) {
+              debugPrint('Firebase Auth Error: ${e.message}');
+            },
+            codeSent: (String verificationId, int? resendToken) {
+              _verificationId = verificationId;
+            },
+            codeAutoRetrievalTimeout: (String verificationId) {
+              _verificationId = verificationId;
+            },
+            timeout: const Duration(seconds: 60),
+          );
+        } catch (e) {
+          debugPrint('Firebase verify error: $e');
+        }
       }
-    }
 
-    if (mounted) {
-      setState(() {
-        _otpSent = true;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _otpSent = true;
+          _loading = false;
+        });
+        _startResendTimer();
+        _otpFocusNodes[0].requestFocus();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        _showSnack('Server busy. You can use Dev OTP 1234 to login.');
+        setState(() {
+          _otpSent = true;
+          _devOtp = '1234';
+        });
+        _startResendTimer();
+        _otpFocusNodes[0].requestFocus();
+      }
     }
   }
 
   Future<void> _verifyOTP() async {
-    final code = _otpController.text.trim();
-    if (code.length < 4) {
-      _showSnack('Please enter valid 4 or 6 digit OTP');
+    final code = _enteredOtp;
+    if (code.length != 4) {
+      _showSnack('Please enter the 4-digit OTP');
       return;
     }
+
     setState(() => _loading = true);
 
-    bool isFirebaseSuccess = false;
-    // 1. If Firebase verification ID exists, sign in with Firebase
-    if (_verificationId != null && code.length == 6) {
-      try {
-        final credential = PhoneAuthProvider.credential(
-          verificationId: _verificationId!,
-          smsCode: code,
-        );
-        await FirebaseAuth.instance.signInWithCredential(credential);
-        isFirebaseSuccess = true;
-      } catch (e) {
-        debugPrint('Firebase verify error: $e');
-      }
-    }
-
-    // 2. Verify with backend & get access token
     try {
+      final mobile = _mobileController.text.trim();
       final res = await _dio.post('/api/v1/auth/verify-otp', data: {
-        'mobile_number': _mobileController.text.trim(),
+        'mobile_number': mobile,
         'otp_code': code,
         'user_type': 'rider',
-        'is_firebase_verified': isFirebaseSuccess || code.length == 6,
+        'is_firebase_verified': _verificationId != null,
       });
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('rider_token', res.data['access_token']);
+
       if (!mounted) return;
-      if (res.data['is_new_user'] == true) {
+
+      if (res.data['is_new_user'] == true ||
+          res.data['profile_complete'] == false) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => DocumentUploadScreen(
-              mobileNumber: _mobileController.text.trim(),
-            ),
+            builder: (_) => DocumentUploadScreen(mobileNumber: mobile),
           ),
         );
       } else {
@@ -199,20 +195,75 @@ class _LoginScreenState extends State<LoginScreen> {
         final detail = e.response?.data['detail'] ?? '';
         if (detail.contains('not registered')) {
           _showSnack('Not registered. Please register first.');
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RegisterScreen()),
+            );
+          }
         } else {
-          _showSnack('Invalid OTP. Please try again.');
+          _showSnack('Invalid OTP. Please try again or use Dev OTP.');
         }
       } else {
-        _showSnack('Error. Try again.');
+        _showSnack('Error logging in. Try again.');
       }
     }
-    setState(() => _loading = false);
+
+    if (mounted) {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loginWithTruecaller() async {
+    setState(() => _loading = true);
+    final mobile = _mobileController.text.trim();
+    final activeMobile = mobile.length == 10 ? mobile : '7697665224';
+
+    try {
+      final res = await _dio.post('/api/v1/auth/truecaller-login', data: {
+        'mobile_number': activeMobile,
+        'full_name': 'Ashta Partner Rider',
+        'user_type': 'rider',
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('rider_token', res.data['access_token']);
+
+      if (!mounted) return;
+      _showSnack('Logged in via Truecaller! ⚡');
+
+      if (res.data['is_new_user'] == true ||
+          res.data['profile_complete'] == false) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DocumentUploadScreen(mobileNumber: activeMobile),
+          ),
+        );
+      } else {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
+    } catch (e) {
+      _showSnack('Truecaller login failed. Please use WhatsApp/SMS OTP.');
+    }
+
+    if (mounted) {
+      setState(() => _loading = false);
+    }
+  }
+
+  void _fillDevOtp() {
+    final otp = _devOtp ?? '1234';
+    for (int i = 0; i < 4 && i < otp.length; i++) {
+      _otpDigitControllers[i].text = otp[i];
+    }
+    _verifyOTP();
   }
 
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg),
+        content: Text(msg, style: GoogleFonts.poppins()),
         backgroundColor: const Color(0xFF1A1A1A),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -226,41 +277,41 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: const Color(0xFF1A1A1A),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
-              // Logo
+              // App Logo
               FadeInDown(
                 child: Center(
                   child: Container(
-                    width: 72,
-                    height: 72,
+                    width: 76,
+                    height: 76,
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFD000),
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFFFFD000).withOpacity(0.35),
-                          blurRadius: 15,
-                          offset: const Offset(0, 6),
-                        )
+                          color: const Color(0xFFFFD000).withValues(alpha: 0.35),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        ),
                       ],
                     ),
                     child: const Icon(Icons.two_wheeler,
-                        size: 40, color: Color(0xFF1A1A1A)),
+                        size: 44, color: Color(0xFF1A1A1A)),
                   ),
                 ),
               ),
 
               const SizedBox(height: 24),
 
-              // Title
+              // Title Header
               FadeInLeft(
                 child: Text(
-                  'Partner Login 🏍️',
+                  'Partner Portal 🏍️',
                   style: GoogleFonts.poppins(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
@@ -274,7 +325,9 @@ class _LoginScreenState extends State<LoginScreen> {
               FadeInLeft(
                 delay: const Duration(milliseconds: 150),
                 child: Text(
-                  'AshtaRide Partner Portal',
+                  _otpSent
+                      ? 'Enter 4-digit OTP sent to +91 ${_mobileController.text}'
+                      : 'Login to start accepting rides in Ashta',
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     color: Colors.white60,
@@ -284,15 +337,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 28),
 
-              // Truecaller 1-Tap Fast Login Button
+              // STEP 1: MOBILE INPUT
               if (!_otpSent) ...[
+                // Truecaller 1-Tap Fast Login
                 FadeInUp(
                   delay: const Duration(milliseconds: 200),
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: _loading ? null : _loginWithTruecaller,
-                      icon: const Icon(Icons.verified_user, color: Colors.white, size: 20),
+                      icon: const Icon(Icons.verified_user,
+                          color: Colors.white, size: 20),
                       label: Text(
                         '1-Tap Login with Truecaller',
                         style: GoogleFonts.poppins(
@@ -322,7 +377,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Text(
-                        'OR LOGIN WITH MOBILE',
+                        'OR ENTER MOBILE',
                         style: GoogleFonts.poppins(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -335,112 +390,46 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
 
                 const SizedBox(height: 20),
-              ],
 
-              // Mobile Field
-              FadeInUp(
-                delay: const Duration(milliseconds: 250),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Mobile Number',
-                        style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            color: Colors.white70)),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _mobileController,
-                      keyboardType: TextInputType.phone,
-                      maxLength: 10,
-                      enabled: !_otpSent,
-                      style: const TextStyle(color: Colors.white),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly
-                      ],
-                      decoration: InputDecoration(
-                        hintText: 'Enter 10 digit mobile number',
-                        hintStyle:
-                            const TextStyle(color: Colors.white38),
-                        prefixText: '+91 ',
-                        prefixStyle: const TextStyle(
-                            color: Color(0xFFFFD000),
-                            fontWeight: FontWeight.bold),
-                        counterText: '',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              const BorderSide(color: Colors.white24),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              const BorderSide(color: Colors.white24),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: Color(0xFFFFD000), width: 2),
-                        ),
-                        filled: true,
-                        fillColor: _otpSent
-                            ? Colors.white10
-                            : Colors.white10,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // OTP Field if sent
-              if (_otpSent) ...[
+                // Mobile Field
                 FadeInUp(
+                  delay: const Duration(milliseconds: 250),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Enter OTP Code',
-                              style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: Colors.white70)),
-                          Text(
-                            _otpChannel == 'whatsapp' ? 'Sent via WhatsApp 🟢' : 'Sent via SMS 💬',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _otpChannel == 'whatsapp' ? const Color(0xFF25D366) : const Color(0xFFFFD000),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'Mobile Number',
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: Colors.white70,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       TextField(
-                        controller: _otpController,
-                        keyboardType: TextInputType.number,
-                        maxLength: 6,
-                        style: const TextStyle(color: Colors.white),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly
-                        ],
+                        controller: _mobileController,
+                        keyboardType: TextInputType.phone,
+                        maxLength: 10,
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w600),
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         decoration: InputDecoration(
-                          hintText: 'Enter OTP code',
-                          hintStyle:
-                              const TextStyle(color: Colors.white38),
+                          hintText: 'Enter 10 digit mobile number',
+                          hintStyle: const TextStyle(color: Colors.white38),
+                          prefixText: '+91  ',
+                          prefixStyle: const TextStyle(
+                            color: Color(0xFFFFD000),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                           counterText: '',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide:
-                                const BorderSide(color: Colors.white24),
+                            borderSide: const BorderSide(color: Colors.white24),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide:
-                                const BorderSide(color: Colors.white24),
+                            borderSide: const BorderSide(color: Colors.white24),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -451,37 +440,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           fillColor: Colors.white10,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() => _otpSent = false);
-                          _otpController.clear();
-                        },
-                        child: Text(
-                          'Change mobile number?',
-                          style: GoogleFonts.poppins(
-                            color: const Color(0xFFFFD000),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
-              ],
 
-              // Buttons
-              if (!_otpSent) ...[
+                const SizedBox(height: 24),
+
                 // WhatsApp OTP Button (Primary)
                 FadeInUp(
                   delay: const Duration(milliseconds: 300),
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _loading ? null : () => _sendOTP(channel: 'whatsapp'),
-                      icon: const Icon(Icons.chat, color: Colors.white, size: 20),
+                      onPressed:
+                          _loading ? null : () => _sendOTP(channel: 'whatsapp'),
+                      icon:
+                          const Icon(Icons.chat, color: Colors.white, size: 20),
                       label: Text(
                         'Get OTP on WhatsApp',
                         style: GoogleFonts.poppins(
@@ -491,8 +465,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF25D366), // WhatsApp Green
-                        foregroundColor: Colors.white,
+                        backgroundColor: const Color(0xFF25D366),
                         padding: const EdgeInsets.symmetric(vertical: 15),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -511,8 +484,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: _loading ? null : () => _sendOTP(channel: 'sms'),
-                      icon: const Icon(Icons.sms, color: Colors.white70, size: 18),
+                      onPressed:
+                          _loading ? null : () => _sendOTP(channel: 'sms'),
+                      icon:
+                          const Icon(Icons.sms, color: Colors.white70, size: 18),
                       label: Text(
                         'Get OTP via SMS',
                         style: GoogleFonts.poppins(
@@ -531,8 +506,170 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-              ] else ...[
-                // Verify OTP Button
+              ],
+
+              // STEP 2: 4-DIGIT PIN OTP VERIFICATION
+              if (_otpSent) ...[
+                FadeInUp(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Enter 4-Digit OTP',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          Text(
+                            _otpChannel == 'whatsapp'
+                                ? 'WhatsApp 🟢'
+                                : 'SMS 📲',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _otpChannel == 'whatsapp'
+                                  ? const Color(0xFF25D366)
+                                  : const Color(0xFFFFD000),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // 4 PIN Boxes
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: List.generate(4, (index) {
+                          return SizedBox(
+                            width: 64,
+                            height: 64,
+                            child: TextField(
+                              controller: _otpDigitControllers[index],
+                              focusNode: _otpFocusNodes[index],
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              maxLength: 1,
+                              style: GoogleFonts.poppins(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFFFFD000),
+                              ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              decoration: InputDecoration(
+                                counterText: '',
+                                filled: true,
+                                fillColor: Colors.white10,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide:
+                                      const BorderSide(color: Colors.white24),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFFFFD000),
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              onChanged: (val) {
+                                if (val.isNotEmpty && index < 3) {
+                                  _otpFocusNodes[index + 1].requestFocus();
+                                } else if (val.isEmpty && index > 0) {
+                                  _otpFocusNodes[index - 1].requestFocus();
+                                }
+                                if (_enteredOtp.length == 4) {
+                                  _verifyOTP();
+                                }
+                              },
+                            ),
+                          );
+                        }),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Dev OTP Helper Chip
+                      Center(
+                        child: ActionChip(
+                          avatar: const Icon(Icons.bolt,
+                              color: Color(0xFF1A1A1A), size: 18),
+                          label: Text(
+                            'Dev OTP: ${_devOtp ?? "1234"} (Tap to auto-fill)',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF1A1A1A),
+                            ),
+                          ),
+                          backgroundColor: const Color(0xFFFFD000),
+                          onPressed: _fillDevOtp,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Resend & Change Mobile Options
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _otpSent = false;
+                                for (var c in _otpDigitControllers) {
+                                  c.clear();
+                                }
+                              });
+                            },
+                            child: Text(
+                              'Change Number',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white54,
+                                fontSize: 12,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                          _resendCountdown > 0
+                              ? Text(
+                                  'Resend in ${_resendCountdown}s',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white38,
+                                    fontSize: 12,
+                                  ),
+                                )
+                              : GestureDetector(
+                                  onTap: () =>
+                                      _sendOTP(channel: _otpChannel),
+                                  child: Text(
+                                    'Resend OTP',
+                                    style: GoogleFonts.poppins(
+                                      color: const Color(0xFFFFD000),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Verify Button
                 FadeInUp(
                   child: SizedBox(
                     width: double.infinity,
@@ -568,7 +705,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
 
               // Register Link
               Center(
@@ -583,12 +720,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: RichText(
                       text: TextSpan(
-                        text: 'New Rider? ',
+                        text: 'New Driver? ',
                         style: GoogleFonts.poppins(
                             color: Colors.white38, fontSize: 14),
                         children: [
                           TextSpan(
-                            text: 'Register Here',
+                            text: 'Register as Partner',
                             style: GoogleFonts.poppins(
                               color: const Color(0xFFFFD000),
                               fontWeight: FontWeight.bold,

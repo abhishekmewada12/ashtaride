@@ -3,6 +3,7 @@ import string
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from pydantic import BaseModel
 
 from app.database import get_db
@@ -132,18 +133,35 @@ def send_otp(request: SendOTPRequest, db: Session = Depends(get_db)):
     if len(mobile) != 10 or not mobile.isdigit():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid mobile number. Must be 10 digits.")
 
+    now = datetime.utcnow()
+
+    # Check if account is temporarily locked due to failed attempts
+    locked_record = db.query(OTPRecord).filter(
+        OTPRecord.mobile_number == mobile,
+        OTPRecord.locked_until > now
+    ).first()
+    if locked_record:
+        rem_mins = max(1, int((locked_record.locked_until - now).total_seconds() / 60))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed OTP attempts. Account temporarily locked. Please try again in {rem_mins} minutes."
+        )
+
+    # Clean up un-locked unused old records
     db.query(OTPRecord).filter(
         OTPRecord.mobile_number == mobile,
-        OTPRecord.is_used == False
+        OTPRecord.is_used == False,
+        or_(OTPRecord.locked_until == None, OTPRecord.locked_until <= now)
     ).delete()
 
     otp = generate_otp()
-    expires_at = datetime.utcnow() + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+    expires_at = now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
 
     otp_record = OTPRecord(
         mobile_number=mobile,
         otp_code=otp,
         otp_type=f"{request.user_type}_login",
+        attempts=0,
         expires_at=expires_at
     )
     db.add(otp_record)
@@ -232,21 +250,51 @@ def truecaller_login(request: TruecallerLoginRequest, db: Session = Depends(get_
 @router.post("/verify-otp", response_model=TokenResponse)
 def verify_otp(request: VerifyOTPRequest, db: Session = Depends(get_db)):
     mobile = request.mobile_number.strip()
+    now = datetime.utcnow()
+
+    # Check if account is temporarily locked
+    locked_record = db.query(OTPRecord).filter(
+        OTPRecord.mobile_number == mobile,
+        OTPRecord.locked_until > now
+    ).first()
+    if locked_record:
+        rem_mins = max(1, int((locked_record.locked_until - now).total_seconds() / 60))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Account locked due to 5 failed attempts. Please try again in {rem_mins} minutes."
+        )
 
     otp_record = db.query(OTPRecord).filter(
         OTPRecord.mobile_number == mobile,
-        OTPRecord.otp_code == request.otp_code,
         OTPRecord.is_used == False,
-        OTPRecord.expires_at > datetime.utcnow()
-    ).first()
+        OTPRecord.expires_at > now
+    ).order_by(OTPRecord.created_at.desc()).first()
 
-    # If not found in local OTPRecord, check if verified via Firebase Auth (6-digit OTP)
-    if not otp_record and not (request.is_firebase_verified or len(request.otp_code) == 6):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
+    is_firebase = request.is_firebase_verified or len(request.otp_code) == 6
+
+    if not otp_record and not is_firebase:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP. Please request a new OTP.")
 
     if otp_record:
-        otp_record.is_used = True
-        db.commit()
+        if otp_record.otp_code != request.otp_code and not is_firebase:
+            otp_record.attempts = (otp_record.attempts or 0) + 1
+            if otp_record.attempts >= 5:
+                otp_record.locked_until = now + timedelta(minutes=15)
+                db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Maximum OTP verification attempts reached (5/5). Account locked for 15 minutes."
+                )
+            else:
+                remaining = 5 - otp_record.attempts
+                db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid OTP code. {remaining} attempt(s) remaining."
+                )
+        else:
+            otp_record.is_used = True
+            db.commit()
 
     is_new = False
 
