@@ -74,6 +74,7 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
               totalFare: (rideData['total_fare'] ?? '50').toString(),
               destination: widget.destination,
               rideOtp: rideData['ride_otp']?.toString(),
+              riderPhoto: riderData['photo']?.toString(),
               vehicleType: riderData['vehicle_type']?.toString() ?? 'bike',
               vehiclePlate: riderData['vehicle_plate']?.toString() ?? 'MP-04-XX-0000',
               vehicleModel: riderData['vehicle_model']?.toString() ?? 'Bike',

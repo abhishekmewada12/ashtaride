@@ -181,8 +181,12 @@ export default function RidersPage() {
             <div key={rider.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 relative">
               {/* Rider Header */}
               <div className="flex items-start gap-4 mb-4">
-                <div className="w-14 h-14 bg-yellow-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <User size={28} className="text-yellow-600" />
+                <div className="w-14 h-14 bg-yellow-100 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden border border-yellow-300">
+                  {rider.profile_photo ? (
+                    <img src={rider.profile_photo} alt={rider.full_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <User size={28} className="text-yellow-600" />
+                  )}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
@@ -300,11 +304,19 @@ export default function RidersPage() {
             </div>
             
             <div className="space-y-3 text-sm">
-              <div className="p-3 bg-gray-50 rounded-xl">
-                <p><strong>Full Name:</strong> {selectedRider.full_name}</p>
-                <p><strong>Mobile:</strong> +91 {selectedRider.mobile_number}</p>
-                <p><strong>Joined:</strong> {new Date(selectedRider.created_at).toLocaleString('en-IN')}</p>
-                <p><strong>Status:</strong> {selectedRider.is_blocked ? '🚫 Blocked' : selectedRider.verification_status}</p>
+              <div className="p-4 bg-gray-50 rounded-xl flex items-center gap-4">
+                <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden border-2 border-yellow-400">
+                  {selectedRider.profile_photo ? (
+                    <img src={selectedRider.profile_photo} alt={selectedRider.full_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <User size={32} className="text-yellow-600" />
+                  )}
+                </div>
+                <div>
+                  <p className="font-bold text-base text-gray-900">{selectedRider.full_name}</p>
+                  <p className="text-gray-600">+91 {selectedRider.mobile_number}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Joined: {new Date(selectedRider.created_at).toLocaleDateString('en-IN')}</p>
+                </div>
               </div>
 
               <h4 className="font-bold text-gray-900 mt-3">Vehicle Information</h4>

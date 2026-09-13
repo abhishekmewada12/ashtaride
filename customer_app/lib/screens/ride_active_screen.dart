@@ -15,6 +15,7 @@ class RideActiveScreen extends StatefulWidget {
   final String totalFare;
   final String destination;
   final String? rideOtp;
+  final String? riderPhoto;
   final String vehicleType;
   final String vehiclePlate;
   final String vehicleModel;
@@ -28,6 +29,7 @@ class RideActiveScreen extends StatefulWidget {
     required this.totalFare,
     required this.destination,
     this.rideOtp,
+    this.riderPhoto,
     this.vehicleType = 'bike',
     this.vehiclePlate = 'MP-04-XX-0000',
     this.vehicleModel = 'Hero Splendor',
@@ -353,8 +355,21 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
                                 color: const Color(0xFFFFD000),
                                 borderRadius: BorderRadius.circular(15),
                               ),
-                              child: const Icon(Icons.person,
-                                  size: 35, color: Color(0xFF1A1A1A)),
+                              child: widget.riderPhoto != null &&
+                                      widget.riderPhoto!.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(15),
+                                      child: Image.network(
+                                        widget.riderPhoto!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            const Icon(Icons.person,
+                                                size: 35,
+                                                color: Color(0xFF1A1A1A)),
+                                      ),
+                                    )
+                                  : const Icon(Icons.person,
+                                      size: 35, color: Color(0xFF1A1A1A)),
                             ),
                             const SizedBox(width: 16),
                             Expanded(

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from pydantic import BaseModel
+from typing import Optional
 
 from app.database import get_db
 from app.models import User, Rider, OTPRecord, AdminUser
@@ -393,6 +394,7 @@ def register_rider(full_name: str, mobile_number: str, db: Session = Depends(get
     }
 class DocumentUploadRequest(BaseModel):
     mobile_number: str
+    profile_photo_base64: Optional[str] = None
     aadhaar_number: str
     aadhaar_doc_base64: str
     driving_license_number: str
@@ -423,6 +425,22 @@ def upload_documents(request: DocumentUploadRequest, db: Session = Depends(get_d
             api_secret=settings.CLOUDINARY_API_SECRET,
             secure=True
         )
+
+    # 0. Upload Profile Photo / Selfie to Cloudinary
+    if request.profile_photo_base64:
+        if request.profile_photo_base64.startswith("http"):
+            rider.profile_photo = request.profile_photo_base64
+        else:
+            try:
+                photo_res = cloudinary.uploader.upload(
+                    request.profile_photo_base64,
+                    folder="ashtaride/profiles",
+                    resource_type="auto"
+                )
+                rider.profile_photo = photo_res.get("secure_url", request.profile_photo_base64)
+            except Exception as e:
+                print(f"Profile Photo Cloudinary upload error: {e}")
+                rider.profile_photo = request.profile_photo_base64
 
     # 1. Upload Aadhaar to Cloudinary
     rider.aadhaar_number = request.aadhaar_number

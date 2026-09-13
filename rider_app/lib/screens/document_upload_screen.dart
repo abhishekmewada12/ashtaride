@@ -23,6 +23,8 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   final _modelController = TextEditingController();
 
   String _vehicleType = 'bike';
+  Uint8List? _profileImageBytes;
+  String? _profileBase64;
   Uint8List? _aadhaarImageBytes;
   Uint8List? _licenseImageBytes;
   String? _aadhaarBase64;
@@ -32,7 +34,8 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
   final _picker = ImagePicker();
 
-  Future<void> _pickImage(bool isAadhaar) async {
+  Future<void> _pickImage(int docType) async {
+    // docType: 0 = Profile Selfie, 1 = Aadhaar, 2 = Driving License
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A1A),
@@ -58,7 +61,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
                     label: 'Camera',
                     onTap: () async {
                       Navigator.pop(context);
-                      await _getImage(ImageSource.camera, isAadhaar);
+                      await _getImage(ImageSource.camera, docType);
                     },
                   ),
                 ),
@@ -69,7 +72,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
                     label: 'Gallery',
                     onTap: () async {
                       Navigator.pop(context);
-                      await _getImage(ImageSource.gallery, isAadhaar);
+                      await _getImage(ImageSource.gallery, docType);
                     },
                   ),
                 ),
@@ -82,7 +85,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
     );
   }
 
-  Future<void> _getImage(ImageSource source, bool isAadhaar) async {
+  Future<void> _getImage(ImageSource source, int docType) async {
     final picked = await _picker.pickImage(
       source: source,
       imageQuality: 50,
@@ -94,7 +97,10 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
     final base64Str = 'data:image/jpeg;base64,${base64Encode(bytes)}';
 
     setState(() {
-      if (isAadhaar) {
+      if (docType == 0) {
+        _profileImageBytes = bytes;
+        _profileBase64 = base64Str;
+      } else if (docType == 1) {
         _aadhaarImageBytes = bytes;
         _aadhaarBase64 = base64Str;
       } else {
@@ -132,6 +138,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
         '/api/v1/auth/rider/upload-documents',
         data: jsonEncode({
           'mobile_number': widget.mobileNumber,
+          'profile_photo_base64': _profileBase64,
           'aadhaar_number': _aadhaarNumberController.text,
           'aadhaar_doc_base64': _aadhaarBase64,
           'driving_license_number': _licenseNumberController.text,
@@ -233,13 +240,88 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Upload your documents for verification.',
+                        'Upload your selfie and documents for verification.',
                         style: GoogleFonts.poppins(
                             color: Colors.white70, fontSize: 12),
                       ),
                     ),
                   ],
                 ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Driver Profile Photo / Selfie Card
+            _SectionTitle('Driver Photo (Selfie)'),
+            const SizedBox(height: 12),
+            Center(
+              child: Stack(
+                children: [
+                  GestureDetector(
+                    onTap: () => _pickImage(0),
+                    child: Container(
+                      width: 110,
+                      height: 110,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white10,
+                        border: Border.all(
+                            color: const Color(0xFFFFD000), width: 2.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFFFD000).withValues(alpha: 0.2),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: _profileImageBytes != null
+                          ? ClipOval(
+                              child: Image.memory(
+                                _profileImageBytes!,
+                                width: 110,
+                                height: 110,
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          : const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.person,
+                                    size: 50, color: Colors.white54),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Add Photo',
+                                  style: TextStyle(
+                                      color: Color(0xFFFFD000),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: () => _pickImage(0),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFFD000),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          size: 18,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
 
@@ -264,7 +346,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
             _PhotoUploadCard(
               label: 'Aadhaar Card Photo',
               imageBytes: _aadhaarImageBytes,
-              onTap: () => _pickImage(true),
+              onTap: () => _pickImage(1),
             ),
 
             const SizedBox(height: 24),
@@ -284,7 +366,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
             _PhotoUploadCard(
               label: 'Driving License Photo',
               imageBytes: _licenseImageBytes,
-              onTap: () => _pickImage(false),
+              onTap: () => _pickImage(2),
             ),
 
             const SizedBox(height: 24),

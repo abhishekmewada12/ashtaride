@@ -650,6 +650,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         _activeRide!['rider']['rating'].toString(),
                     totalFare: _activeRide!['fare'].toString(),
                     destination: _activeRide!['destination_address'],
+                    riderPhoto: _activeRide!['rider']['photo']?.toString(),
                   ),
                 ),
               ).then((_) => _checkActiveRide());
