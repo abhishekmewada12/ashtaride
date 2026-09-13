@@ -25,18 +25,34 @@ export default function RidesPage() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'accepted': return 'bg-blue-100 text-blue-600';
-      case 'rider_arriving': return 'bg-orange-100 text-orange-600';
-      case 'ride_started': return 'bg-green-100 text-green-600';
-      default: return 'bg-gray-100 text-gray-600';
+      case 'ASSIGNED':
+      case 'accepted': return 'bg-blue-100 text-blue-700 border border-blue-200';
+      case 'DRIVER_ARRIVING':
+      case 'rider_arriving': return 'bg-orange-100 text-orange-700 border border-orange-200';
+      case 'DRIVER_ARRIVED': return 'bg-purple-100 text-purple-700 border border-purple-200';
+      case 'IN_PROGRESS':
+      case 'ride_started': return 'bg-amber-100 text-amber-800 border border-amber-200';
+      case 'PAYMENT_PENDING': return 'bg-indigo-100 text-indigo-700 border border-indigo-200';
+      case 'PAYMENT_COMPLETED':
+      case 'COMPLETED':
+      case 'completed': return 'bg-green-100 text-green-700 border border-green-200';
+      default: return 'bg-gray-100 text-gray-700';
     }
   };
 
   const getStatusLabel = (status) => {
     switch (status) {
-      case 'accepted': return '✅ Accepted';
-      case 'rider_arriving': return '🏍️ Rider Arriving';
-      case 'ride_started': return '🚀 In Progress';
+      case 'ASSIGNED':
+      case 'accepted': return '✅ Driver Assigned';
+      case 'DRIVER_ARRIVING':
+      case 'rider_arriving': return '🏍️ Driver Arriving';
+      case 'DRIVER_ARRIVED': return '📍 Driver Arrived';
+      case 'IN_PROGRESS':
+      case 'ride_started': return '🚀 Ride in Progress';
+      case 'PAYMENT_PENDING': return '💳 Payment Pending';
+      case 'PAYMENT_COMPLETED':
+      case 'COMPLETED':
+      case 'completed': return '🎉 Completed';
       default: return status;
     }
   };
@@ -68,16 +84,16 @@ export default function RidesPage() {
         <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
           <Bike size={48} className="text-gray-300 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-gray-900">No Active Rides</h3>
-          <p className="text-gray-500 mt-2">No rides happening right now</p>
+          <p className="text-gray-500 mt-2">No rides happening right now in Ashta</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {rides.map((ride) => (
             <div
               key={ride.ride_id}
-              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
+              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-between"
             >
-              {/* Status Badge */}
+              {/* Status Badge & Time */}
               <div className="flex items-center justify-between mb-4">
                 <span className={`text-xs font-semibold px-3 py-1 rounded-full ${getStatusColor(ride.status)}`}>
                   {getStatusLabel(ride.status)}
@@ -87,8 +103,22 @@ export default function RidesPage() {
                   <span>
                     {ride.started_at
                       ? new Date(ride.started_at).toLocaleTimeString('en-IN')
-                      : 'Just started'}
+                      : 'Just now'}
                   </span>
+                </div>
+              </div>
+
+              {/* Rider & Customer info */}
+              <div className="grid grid-cols-2 gap-2 p-3 bg-gray-50 rounded-xl mb-4 text-xs">
+                <div>
+                  <span className="text-gray-400 block">Driver Partner:</span>
+                  <span className="font-semibold text-gray-800">{ride.rider_name || 'Ashta Rider'}</span>
+                  {ride.rider_mobile && <span className="text-gray-500 block">{ride.rider_mobile}</span>}
+                </div>
+                <div>
+                  <span className="text-gray-400 block">Customer:</span>
+                  <span className="font-semibold text-gray-800">{ride.customer_name || 'Customer'}</span>
+                  {ride.customer_mobile && <span className="text-gray-500 block">{ride.customer_mobile}</span>}
                 </div>
               </div>
 
@@ -119,14 +149,16 @@ export default function RidesPage() {
                 </div>
               </div>
 
-              {/* Fare */}
+              {/* Fare & Meta */}
               <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                 <div className="flex items-center gap-2">
                   <IndianRupee size={16} className="text-green-500" />
                   <span className="font-bold text-gray-900 text-lg">
                     ₹{ride.fare}
                   </span>
-                  <span className="text-gray-400 text-sm">• Cash</span>
+                  <span className="text-gray-500 text-xs font-medium uppercase px-2 py-0.5 bg-gray-100 rounded">
+                    {ride.vehicle_type || 'Bike'} • {ride.payment_method || 'Cash'}
+                  </span>
                 </div>
                 <span className="text-xs text-gray-400 font-mono">
                   #{ride.ride_id?.slice(-8)}

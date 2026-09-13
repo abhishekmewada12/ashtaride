@@ -256,10 +256,10 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
                           margin: const EdgeInsets.only(bottom: 16),
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
+                            color: Colors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                                color: Colors.orange.withOpacity(0.5),
+                                color: Colors.orange.withValues(alpha: 0.5),
                                 width: 2),
                           ),
                           child: Column(
@@ -296,7 +296,7 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
                                       boxShadow: [
                                         BoxShadow(
                                           color: Colors.orange
-                                              .withOpacity(0.3),
+                                              .withValues(alpha: 0.3),
                                           blurRadius: 8,
                                           offset: const Offset(0, 4),
                                         ),
@@ -338,7 +338,7 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
+                              color: Colors.black.withValues(alpha: 0.08),
                               blurRadius: 15,
                               offset: const Offset(0, 5),
                             ),
@@ -388,7 +388,7 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
                               child: Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: Colors.green.withOpacity(0.1),
+                                  color: Colors.green.withValues(alpha: 0.1),
                                   borderRadius:
                                       BorderRadius.circular(12),
                                 ),
@@ -438,7 +438,7 @@ class _RideActiveScreenState extends State<RideActiveScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 8),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.1),
+                                color: Colors.white.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text('Cash Payment',

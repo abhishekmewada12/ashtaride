@@ -26,7 +26,6 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   Timer? _statusTimer;
-  String _status = 'searching';
   final _dio = Dio(BaseOptions(baseUrl: 'https://ashtaride.onrender.com'));
 
   @override
@@ -55,9 +54,6 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
       );
 
       final status = res.data['status']?.toString();
-      if (status != null && mounted) {
-        setState(() => _status = status);
-      }
 
       // Check if driver assigned/accepted
       if ((status == 'ASSIGNED' || status == 'accepted') && res.data['ride'] != null) {
@@ -171,7 +167,7 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
                       height: 160 + (_pulseController.value * 40),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(0xFFFFD000).withOpacity(0.1 - (_pulseController.value * 0.1)),
+                        color: const Color(0xFFFFD000).withValues(alpha: 0.1 - (_pulseController.value * 0.1)),
                       ),
                     ),
                     // Middle pulse
@@ -180,7 +176,7 @@ class _RideSearchingScreenState extends State<RideSearchingScreen>
                       height: 130 + (_pulseController.value * 20),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(0xFFFFD000).withOpacity(0.2 - (_pulseController.value * 0.1)),
+                        color: const Color(0xFFFFD000).withValues(alpha: 0.2 - (_pulseController.value * 0.1)),
                       ),
                     ),
                     // Center

@@ -19,7 +19,8 @@ def get_dashboard(current_admin: AdminUser = Depends(get_current_admin), db: Ses
     active_riders    = db.query(Rider).filter(Rider.is_online == True).count()
     
     total_rides      = db.query(Ride).count()
-    active_rides     = db.query(Ride).filter(Ride.status.in_(["accepted", "rider_arriving", "ride_started"])).count()
+    active_statuses  = ["ASSIGNED", "DRIVER_ARRIVING", "DRIVER_ARRIVED", "IN_PROGRESS", "PAYMENT_PENDING", "accepted", "rider_arriving", "ride_started"]
+    active_rides     = db.query(Ride).filter(Ride.status.in_(active_statuses)).count()
 
     today = datetime.utcnow().replace(hour=0, minute=0, second=0)
     today_revenue = db.query(func.sum(Payment.amount)).filter(Payment.payment_status == "completed", Payment.paid_at >= today).scalar() or 0
@@ -95,13 +96,32 @@ def reject_rider(rider_id: str, reason: str, current_admin: AdminUser = Depends(
 
 @router.get("/rides/active")
 def get_active_rides(current_admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)):
-    rides = db.query(Ride).filter(Ride.status.in_(["accepted", "rider_arriving", "ride_started"])).order_by(Ride.created_at.desc()).all()
-    return {
-        "rides": [
-            {"ride_id": str(r.id), "status": r.status, "pickup": r.pickup_address, "destination": r.destination_address, "fare": float(r.total_fare or 0), "started_at": r.ride_started_at.isoformat() if r.ride_started_at else None}
-            for r in rides
-        ]
-    }
+    active_statuses = [
+        "ASSIGNED", "DRIVER_ARRIVING", "DRIVER_ARRIVED", "IN_PROGRESS", "PAYMENT_PENDING",
+        "accepted", "rider_arriving", "ride_started"
+    ]
+    rides = db.query(Ride).filter(Ride.status.in_(active_statuses)).order_by(Ride.created_at.desc()).all()
+    
+    ride_list = []
+    for r in rides:
+        rider = db.query(Rider).filter(Rider.id == r.rider_id).first() if r.rider_id else None
+        user = db.query(User).filter(User.id == r.user_id).first() if r.user_id else None
+        ride_list.append({
+            "ride_id": str(r.id),
+            "status": r.status,
+            "pickup": r.pickup_address,
+            "destination": r.destination_address,
+            "fare": float(r.total_fare or r.estimated_fare or 0),
+            "vehicle_type": r.vehicle_type or "bike",
+            "payment_method": r.payment_method or "cash",
+            "payment_status": r.payment_status or "pending",
+            "rider_name": rider.full_name if rider else "Ashta Rider",
+            "rider_mobile": rider.mobile_number if rider else "",
+            "customer_name": user.full_name if user else "Customer",
+            "customer_mobile": user.mobile_number if user else "",
+            "started_at": r.ride_started_at.isoformat() if r.ride_started_at else (r.created_at.isoformat() if r.created_at else None)
+        })
+    return {"rides": ride_list}
 
 @router.get("/users")
 def get_all_users(page: int = 1, limit: int = 20, current_admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)):

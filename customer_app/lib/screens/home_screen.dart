@@ -108,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always) {
         final position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
         );
         final loc = LatLng(position.latitude, position.longitude);
         setState(() {
@@ -581,9 +581,9 @@ class _HomeScreenState extends State<HomeScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.1),
+            color: statusColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: statusColor.withOpacity(0.3)),
+            border: Border.all(color: statusColor.withValues(alpha: 0.3)),
           ),
           child: Row(
             children: [
@@ -709,7 +709,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               color: _changingPickup
-                  ? const Color(0xFFFFD000).withOpacity(0.1)
+                  ? const Color(0xFFFFD000).withValues(alpha: 0.1)
                   : Colors.grey[50],
               borderRadius: BorderRadius.circular(12),
               border: Border.all(

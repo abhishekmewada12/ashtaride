@@ -50,7 +50,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   borderRadius: BorderRadius.circular(30),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -89,7 +89,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 'Ashta ki Apni Ride',
                 style: GoogleFonts.poppins(
                   fontSize: 16,
-                  color: const Color(0xFF1A1A1A).withOpacity(0.7),
+                  color: const Color(0xFF1A1A1A).withValues(alpha: 0.7),
                   fontWeight: FontWeight.w500,
                 ),
               ),

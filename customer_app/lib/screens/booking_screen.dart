@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:animate_do/animate_do.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -26,7 +25,6 @@ class _BookingScreenState extends State<BookingScreen> {
   final MapController _mapController = MapController();
   LatLng? _destinationLocation;
   String _pickupAddress = '';
-  Map<String, dynamic>? _fareEstimate;
   bool _loading = false;
   bool _fareLoading = false;
   List<Map<String, dynamic>> _suggestions = [];
@@ -252,7 +250,6 @@ class _BookingScreenState extends State<BookingScreen> {
       }
       
       setState(() {
-        _fareEstimate = res.data;
         _fareLoading = false;
       });
     } catch (e) {
@@ -421,10 +418,10 @@ class _BookingScreenState extends State<BookingScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.05),
+                      color: Colors.green.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(12),
                       border:
-                          Border.all(color: Colors.green.withOpacity(0.3)),
+                          Border.all(color: Colors.green.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
@@ -461,7 +458,6 @@ class _BookingScreenState extends State<BookingScreen> {
                                 _destinationController.clear();
                                 setState(() {
                                   _destinationLocation = null;
-                                  _fareEstimate = null;
                                   _routePoints = [];
                                   _suggestions = [];
                                   _showSuggestions = false;
@@ -489,7 +485,7 @@ class _BookingScreenState extends State<BookingScreen> {
                         border: Border.all(color: Colors.grey[200]!),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
+                            color: Colors.black.withValues(alpha: 0.08),
                             blurRadius: 10,
                           ),
                         ],
