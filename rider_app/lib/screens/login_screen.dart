@@ -24,7 +24,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _otpSent = false;
   bool _loading = false;
-  String _otpChannel = 'whatsapp';
   String? _verificationId;
   String? _devOtp;
 
@@ -72,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String get _enteredOtp =>
       _otpDigitControllers.map((c) => c.text.trim()).join();
 
-  Future<void> _sendOTP({String channel = 'whatsapp'}) async {
+  Future<void> _sendOTP() async {
     final mobile = _mobileController.text.trim();
     if (mobile.length != 10) {
       _showSnack('Please enter a valid 10-digit mobile number');
@@ -81,14 +80,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() {
       _loading = true;
-      _otpChannel = channel;
     });
 
     try {
       final res = await _dio.post('/api/v1/auth/send-otp', data: {
         'mobile_number': mobile,
         'user_type': 'rider',
-        'channel': channel,
+        'channel': 'sms',
       });
 
       if (res.data != null && res.data['dev_otp'] != null) {
@@ -97,41 +95,35 @@ class _LoginScreenState extends State<LoginScreen> {
         _devOtp = '1234';
       }
 
-      if (channel == 'whatsapp') {
-        _showSnack('WhatsApp OTP sent to +91 $mobile 🟢');
-      } else {
-        _showSnack('SMS OTP sent to +91 $mobile 📲');
-      }
+      _showSnack('SMS OTP sent to +91 $mobile 📲');
 
-      // If SMS, also trigger Firebase SMS
-      if (channel == 'sms') {
-        try {
-          await FirebaseAuth.instance.verifyPhoneNumber(
-            phoneNumber: '+91$mobile',
-            verificationCompleted: (PhoneAuthCredential credential) async {
-              if (credential.smsCode != null &&
-                  credential.smsCode!.length >= 4) {
-                final code = credential.smsCode!;
-                for (int i = 0; i < 4 && i < code.length; i++) {
-                  _otpDigitControllers[i].text = code[i];
-                }
-                await _verifyOTP();
+      // Also trigger Firebase SMS verification as fallback
+      try {
+        await FirebaseAuth.instance.verifyPhoneNumber(
+          phoneNumber: '+91$mobile',
+          verificationCompleted: (PhoneAuthCredential credential) async {
+            if (credential.smsCode != null &&
+                credential.smsCode!.length >= 4) {
+              final code = credential.smsCode!;
+              for (int i = 0; i < 4 && i < code.length; i++) {
+                _otpDigitControllers[i].text = code[i];
               }
-            },
-            verificationFailed: (FirebaseAuthException e) {
-              debugPrint('Firebase Auth Error: ${e.message}');
-            },
-            codeSent: (String verificationId, int? resendToken) {
-              _verificationId = verificationId;
-            },
-            codeAutoRetrievalTimeout: (String verificationId) {
-              _verificationId = verificationId;
-            },
-            timeout: const Duration(seconds: 60),
-          );
-        } catch (e) {
-          debugPrint('Firebase verify error: $e');
-        }
+              await _verifyOTP();
+            }
+          },
+          verificationFailed: (FirebaseAuthException e) {
+            debugPrint('Firebase Auth Error: ${e.message}');
+          },
+          codeSent: (String verificationId, int? resendToken) {
+            _verificationId = verificationId;
+          },
+          codeAutoRetrievalTimeout: (String verificationId) {
+            _verificationId = verificationId;
+          },
+          timeout: const Duration(seconds: 60),
+        );
+      } catch (e) {
+        debugPrint('Firebase verify error: $e');
       }
 
       if (mounted) {
@@ -145,7 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        _showSnack('Server busy. You can use Dev OTP 1234 to login.');
+        _showSnack('Enter OTP to continue (Dev OTP: 1234)');
         setState(() {
           _otpSent = true;
           _devOtp = '1234';
@@ -207,44 +199,6 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         _showSnack('Error logging in. Try again.');
       }
-    }
-
-    if (mounted) {
-      setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _loginWithTruecaller() async {
-    setState(() => _loading = true);
-    final mobile = _mobileController.text.trim();
-    final activeMobile = mobile.length == 10 ? mobile : '7697665224';
-
-    try {
-      final res = await _dio.post('/api/v1/auth/truecaller-login', data: {
-        'mobile_number': activeMobile,
-        'full_name': 'Ashta Partner Rider',
-        'user_type': 'rider',
-      });
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('rider_token', res.data['access_token']);
-
-      if (!mounted) return;
-      _showSnack('Logged in via Truecaller! ⚡');
-
-      if (res.data['is_new_user'] == true ||
-          res.data['profile_complete'] == false) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => DocumentUploadScreen(mobileNumber: activeMobile),
-          ),
-        );
-      } else {
-        Navigator.pushReplacementNamed(context, '/dashboard');
-      }
-    } catch (e) {
-      _showSnack('Truecaller login failed. Please use WhatsApp/SMS OTP.');
     }
 
     if (mounted) {
@@ -339,61 +293,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // STEP 1: MOBILE INPUT
               if (!_otpSent) ...[
-                // Truecaller 1-Tap Fast Login
-                FadeInUp(
-                  delay: const Duration(milliseconds: 200),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _loading ? null : _loginWithTruecaller,
-                      icon: const Icon(Icons.verified_user,
-                          color: Colors.white, size: 20),
-                      label: Text(
-                        '1-Tap Login with Truecaller',
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                          color: Colors.white,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0087FF),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Divider OR
-                Row(
-                  children: [
-                    const Expanded(child: Divider(color: Colors.white24)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'OR ENTER MOBILE',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white38,
-                        ),
-                      ),
-                    ),
-                    const Expanded(child: Divider(color: Colors.white24)),
-                  ],
-                ),
-
-                const SizedBox(height: 20),
-
                 // Mobile Field
                 FadeInUp(
-                  delay: const Duration(milliseconds: 250),
+                  delay: const Duration(milliseconds: 200),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -446,62 +348,42 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 24),
 
-                // WhatsApp OTP Button (Primary)
+                // SMS OTP Button (Primary Yellow)
                 FadeInUp(
-                  delay: const Duration(milliseconds: 300),
+                  delay: const Duration(milliseconds: 250),
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed:
-                          _loading ? null : () => _sendOTP(channel: 'whatsapp'),
-                      icon:
-                          const Icon(Icons.chat, color: Colors.white, size: 20),
-                      label: Text(
-                        'Get OTP on WhatsApp',
-                        style: GoogleFonts.poppins(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
+                      onPressed: _loading ? null : _sendOTP,
+                      icon: _loading
+                          ? const SizedBox.shrink()
+                          : const Icon(Icons.sms_rounded,
+                              color: Color(0xFF1A1A1A), size: 20),
+                      label: _loading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation(
+                                    Color(0xFF1A1A1A)),
+                              ),
+                            )
+                          : Text(
+                              'Get OTP via SMS',
+                              style: GoogleFonts.poppins(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF1A1A1A),
+                              ),
+                            ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF25D366),
-                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        backgroundColor: const Color(0xFFFFD000),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                         elevation: 0,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // SMS OTP Button (Secondary)
-                FadeInUp(
-                  delay: const Duration(milliseconds: 350),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed:
-                          _loading ? null : () => _sendOTP(channel: 'sms'),
-                      icon:
-                          const Icon(Icons.sms, color: Colors.white70, size: 18),
-                      label: Text(
-                        'Get OTP via SMS',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        side: const BorderSide(color: Colors.white24),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
                       ),
                     ),
                   ),
@@ -525,15 +407,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               color: Colors.white70,
                             ),
                           ),
-                          Text(
-                            _otpChannel == 'whatsapp'
-                                ? 'WhatsApp 🟢'
-                                : 'SMS 📲',
+                          const Text(
+                            'SMS 📲',
                             style: TextStyle(
                               fontSize: 12,
-                              color: _otpChannel == 'whatsapp'
-                                  ? const Color(0xFF25D366)
-                                  : const Color(0xFFFFD000),
+                              color: Color(0xFFFFD000),
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -650,10 +528,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 )
                               : GestureDetector(
-                                  onTap: () =>
-                                      _sendOTP(channel: _otpChannel),
+                                  onTap: _sendOTP,
                                   child: Text(
-                                    'Resend OTP',
+                                    'Resend OTP via SMS',
                                     style: GoogleFonts.poppins(
                                       color: const Color(0xFFFFD000),
                                       fontWeight: FontWeight.bold,
