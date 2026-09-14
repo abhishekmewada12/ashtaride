@@ -106,8 +106,14 @@ def offer_ride_to_next_candidate(db: Session, ride_request: RideRequest) -> Opti
             Rider.verification_status == "approved",
             Rider.is_active == True,
             Rider.is_blocked == False,
-            Rider.last_location_lat.between(lat - lat_diff, lat + lat_diff),
-            Rider.last_location_lng.between(lng - lng_diff, lng + lng_diff),
+            or_(
+                Rider.last_location_lat == None,
+                Rider.last_location_lat.between(lat - lat_diff, lat + lat_diff)
+            ),
+            or_(
+                Rider.last_location_lng == None,
+                Rider.last_location_lng.between(lng - lng_diff, lng + lng_diff)
+            ),
             ~Rider.id.in_(rejected_ids) if rejected_ids else True
         )
     )
@@ -128,6 +134,9 @@ def offer_ride_to_next_candidate(db: Session, ride_request: RideRequest) -> Opti
             dist = calculate_distance(lat, lng, float(rider.last_location_lat), float(rider.last_location_lng))
             if dist <= radius_km:
                 candidates.append((rider, dist))
+        else:
+            # Fallback if driver is online in Ashta but GPS is freshly starting
+            candidates.append((rider, 0.5))
 
     # Sort candidates by nearest distance to customer
     candidates.sort(key=lambda x: x[1])
