@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     MSG91_SENDER_ID: str = "SMSIND"
     MSG91_TEMPLATE_ID: Optional[str] = "6a8c7206249839385f040aa4"
 
+    APITXT_API_KEY: Optional[str] = "yImQOeHir4firVbYmTBEvXOR499lLqul6MdIjfVies4"
     FAST2SMS_API_KEY: Optional[str] = "isNOugq8mwReloHS2V6BKUDa5TIf91MtnkyPWcjZ4drEpL7CbXGoSlFBrtX1Th35NxCQ0H7IKmjkyWcV"
     RENFLAIR_API_KEY: Optional[str] = "264eba243e927d9e3c3927147af974c2"
     WHATSAPP_API_TOKEN: Optional[str] = None

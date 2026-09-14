@@ -94,8 +94,25 @@ def send_whatsapp_otp(mobile_number: str, otp: str) -> bool:
     return True
 
 def send_otp_sms(mobile_number: str, otp: str):
-    # 1. Renflair SMS Gateway (Zero DLT / Direct Delivery)
-    if settings.RENFLAIR_API_KEY:
+    # 1. APITxT SMS Gateway (Live Real SMS: "otp for AshtaRide registration")
+    if getattr(settings, "APITXT_API_KEY", None):
+        try:
+            url = "https://apitxt.com/api/sendOTP"
+            data = {
+                "authkey": settings.APITXT_API_KEY,
+                "mobile": mobile_number,
+                "otp": otp,
+                "message": f"{otp} is your OTP for AshtaRide registration"
+            }
+            res = requests.post(url, data=data, timeout=10)
+            print(f"[APITxT SMS] Dispatched to {mobile_number} Status: {res.status_code} Response: {res.text}")
+            if res.status_code == 200 and "success" in res.text.lower():
+                return True
+        except Exception as e:
+            print(f"[APITxT SMS Error]: {e}")
+
+    # 2. Renflair SMS Gateway (Zero DLT / Direct Delivery Fallback)
+    if getattr(settings, "RENFLAIR_API_KEY", None):
         try:
             url = f"https://sms.renflair.in/V1.php?API={settings.RENFLAIR_API_KEY}&PHONE={mobile_number}&OTP={otp}"
             res = requests.get(url, timeout=10)
@@ -105,8 +122,8 @@ def send_otp_sms(mobile_number: str, otp: str):
         except Exception as e:
             print(f"[Renflair SMS Error]: {e}")
 
-    # 2. MSG91 Gateway Fallback
-    if settings.MSG91_API_KEY:
+    # 3. MSG91 Gateway Fallback
+    if getattr(settings, "MSG91_API_KEY", None):
         try:
             formatted_mobile = f"91{mobile_number}" if len(mobile_number) == 10 else mobile_number
             params = {
