@@ -233,3 +233,26 @@ def unblock_rider(
     rider.unlock_request_message = None
     db.commit()
     return {"message": f"Rider {rider.full_name} has been unblocked successfully"}
+
+# 4. Purge / Delete All Test Users, Riders & Rides (Clean Fresh Slate)
+@router.post("/purge-all-data")
+def purge_all_data(
+    current_admin: AdminUser = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    from app.models import Rating, Payment, SOSAlert, Ride, RideRequest, Vehicle, OTPRecord, Rider, User
+    db.query(Rating).delete()
+    db.query(Payment).delete()
+    db.query(SOSAlert).delete()
+    db.query(Ride).delete()
+    db.query(RideRequest).delete()
+    db.query(Vehicle).delete()
+    db.query(OTPRecord).delete()
+    db.query(Rider).delete()
+    deleted_users = db.query(User).delete()
+    db.commit()
+    return {
+        "status": "success",
+        "message": "All test users, riders, rides and OTPs deleted successfully! Fresh clean slate ready.",
+        "deleted_users_count": deleted_users
+    }
