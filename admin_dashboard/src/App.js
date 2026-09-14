@@ -6,6 +6,7 @@ import RidersPage from './pages/RidersPage';
 import RidesPage from './pages/RidesPage';
 import UsersPage from './pages/UsersPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import DownloadPage from './pages/DownloadPage';
 import Layout from './components/Layout';
 
 // Protected Route
@@ -18,6 +19,8 @@ function App() {
   return (
     <Router>
       <Routes>
+        <Route path="/download" element={<DownloadPage />} />
+        <Route path="/app" element={<DownloadPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
         <Route
