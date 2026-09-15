@@ -1,15 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import random
 
 from app.database import get_db
-from app.models import Rider, Ride, RideRequest, Payment
+from app.models import Rider, Ride, RideRequest, Payment, Vehicle, User
 from app.auth import get_current_rider
 
 router = APIRouter()
+
+def to_naive_utc(dt):
+    if dt is None:
+        return None
+    if hasattr(dt, "tzinfo") and dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 class LocationUpdate(BaseModel):
     latitude: float
@@ -26,8 +34,8 @@ def get_rider_profile(current_rider: Rider = Depends(get_current_rider)):
         "profile_photo": current_rider.profile_photo,
         "verification_status": current_rider.verification_status,
         "rejection_reason": current_rider.rejection_reason,
-        "is_blocked": current_rider.is_blocked,             # <--- Ye line add karein
-        "block_reason": current_rider.block_reason,         # <--- Ye line add karein
+        "is_blocked": current_rider.is_blocked,
+        "block_reason": current_rider.block_reason,
         "is_online": current_rider.is_online,
         "total_rides": current_rider.total_rides,
         "total_earnings": float(current_rider.total_earnings or 0),
@@ -77,7 +85,7 @@ def get_available_rides(current_rider: Rider = Depends(get_current_rider), db: S
                 )
             ),
             RideRequest.status.in_(["OFFERED", "SEARCHING", "searching"]),
-            RideRequest.expires_at > now
+            or_(RideRequest.expires_at == None, RideRequest.expires_at > now)
         )
     ).order_by(RideRequest.created_at.desc()).limit(5).all()
 
@@ -85,7 +93,8 @@ def get_available_rides(current_rider: Rider = Depends(get_current_rider), db: S
     for r in requests:
         remaining_sec = 30
         if r.offer_expires_at:
-            remaining_sec = max(0, int((r.offer_expires_at - now).total_seconds()))
+            exp = to_naive_utc(r.offer_expires_at)
+            remaining_sec = max(0, int((exp - now).total_seconds()))
             if remaining_sec == 0:
                 continue  # expired
         valid_offers.append({
