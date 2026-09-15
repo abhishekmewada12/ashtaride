@@ -575,42 +575,6 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
 
-        const SizedBox(height: 24),
-
-        // Dev Mode Auto-fill Chip
-        FadeIn(
-          delay: const Duration(milliseconds: 300),
-          child: InkWell(
-            onTap: _fillDevOtp,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.bolt_rounded, size: 20, color: Color(0xFFD97706)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Dev OTP: $_devOtp (Tap to Auto-fill)',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFFB45309),
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.touch_app_outlined, size: 16, color: Color(0xFFD97706)),
-                ],
-              ),
-            ),
-          ),
-        ),
-
         const SizedBox(height: 28),
 
         // Verify Button

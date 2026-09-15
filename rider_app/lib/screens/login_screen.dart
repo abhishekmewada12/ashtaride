@@ -474,29 +474,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       const SizedBox(height: 16),
 
-                      // Dev OTP Helper Chip
-                      Center(
-                        child: ActionChip(
-                          avatar: const Icon(Icons.bolt,
-                              color: Color(0xFF1A1A1A), size: 18),
-                          label: Text(
-                            'Dev OTP: ${_devOtp ?? "1234"} (Tap to auto-fill)',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF1A1A1A),
-                            ),
-                          ),
-                          backgroundColor: const Color(0xFFFFD000),
-                          onPressed: _fillDevOtp,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
                       // Resend & Change Mobile Options
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
